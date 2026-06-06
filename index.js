@@ -100,7 +100,9 @@ client.on("interactionCreate", async interaction => {
     const oracle = pick(oracleList);
 
     await interaction.reply(
-`🍁 **Artale 今日占卜** 🍁
+🍁 **Artale 今日占卜** 🍁
+
+👤 抽籤者：${interaction.user.displayName}
 
 🍀 今日運勢：${fortune}
 
