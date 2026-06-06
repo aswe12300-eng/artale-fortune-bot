@@ -1,5 +1,12 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require("discord.js");
 
+const http = require("http");
+
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Artale Fortune Bot Running");
+}).listen(process.env.PORT || 3000);
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
