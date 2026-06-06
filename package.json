@@ -1,0 +1,12 @@
+{
+  "name": "artale-fortune-bot",
+  "version": "1.0.0",
+  "description": "Artale Fortune Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3"
+  }
+}
