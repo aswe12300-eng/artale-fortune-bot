@@ -1,17 +1,19 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require("discord.js");
-
+const { Client, GatewayIntentBits } = require("discord.js");
 const http = require("http");
 
 http.createServer((req, res) => {
   res.writeHead(200);
-  res.end("Artale Fortune Bot Running");
+  res.end("Bot Running");
 }).listen(process.env.PORT || 3000);
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 function random(min, max) {
@@ -66,51 +68,38 @@ const oracleList = [
   "歐洲人請自重，非洲人請明日再戰。"
 ];
 
-async function registerCommands() {
-  const commands = [
-    new SlashCommandBuilder()
-      .setName("占卜")
-      .setDescription("抽取今日 Artale 公會占卜")
-      .toJSON()
-  ];
-
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-  console.log("✅ /占卜 指令已註冊");
-}
-
-client.once("ready", async () => {
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} 已上線`);
-  await registerCommands();
+  console.log("✅ -占卜 指令已啟用");
 });
 
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+client.on("messageCreate", async message => {
+  if (message.author.bot) return;
+  if (message.content.trim() !== "-占卜") return;
 
-  if (interaction.commandName === "占卜") {
-    const drop = random(1, 100);
-    const enhance = random(1, 100);
-    const boss = random(1, 100);
-    const gacha = random(1, 100);
-    const channel = random(1, 2500);
+  const drop = random(1, 100);
+  const enhance = random(1, 100);
+  const boss = random(1, 100);
+  const gacha = random(1, 100);
+  const channel = random(1, 2500);
 
-    const fortune = pick(fortunes);
-    const advice = pick(adviceList);
-    const poem = pick(poemList);
-    const oracle = pick(oracleList);
+  const fortune = pick(fortunes);
+  const advice = pick(adviceList);
+  const poem = pick(poemList);
+  const oracle = pick(oracleList);
 
-    await interaction.reply(
+  await message.reply(
 `🍁 **Artale 今日占卜** 🍁
 
-👤 抽籤者：${interaction.user.displayName}
+👤 抽籤者：${message.member?.displayName || message.author.username}
 
 🍀 今日運勢：${fortune}
 
 💰 掉寶運：${drop}%
 ⚒️ 衝裝運：${enhance}%
+📡 幸運頻道：CH ${channel}
 👹 打王運：${boss}%
 🎲 轉蛋運：${gacha}%
-📡 幸運頻道：CH ${channel}
 
 📜 今日建議：
 ${advice}
@@ -119,9 +108,18 @@ ${advice}
 ${poem}
 
 💸 公會神諭：
-${oracle}`
-    );
-  }
+${oracle}
+
+━━━━━━━━━━━━━━
+
+⚠️ 本占卜內容僅供娛樂參考
+
+掉寶率、衝裝率、幸運頻道、
+打王運與轉蛋運皆為隨機產生，
+實際結果請以遊戲內狀況為準。
+
+祝各位天天出貨、一發入魂 🍁`
+  );
 });
 
 client.login(TOKEN);
