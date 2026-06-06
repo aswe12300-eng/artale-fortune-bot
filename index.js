@@ -82,28 +82,40 @@ function createFortuneEmbed(user, member) {
   const boss = random(1, 100);
   const gacha = random(1, 100);
   const channel = random(1, 2500);
+  const luckyScore = random(1, 100);
 
   const fortune = pick(fortunes);
   const advice = pick(adviceList);
   const poem = pick(poemList);
   const oracle = pick(oracleList);
 
+  const fortuneColors = {
+    "🌈 天選之人": "#FFD700",
+    "✨ 超級大吉": "#F1C40F",
+    "🍀 大吉": "#2ECC71",
+    "😊 吉": "#3498DB",
+    "🙂 小吉": "#9B59B6",
+    "😐 普通": "#95A5A6",
+    "😵 凶": "#E67E22",
+    "💀 大凶": "#E74C3C"
+  };
+
   const displayName = member?.displayName || user.username;
+
   const avatar = user.displayAvatarURL({
     extension: "png",
     size: 512
   });
 
-  const embed = new EmbedBuilder()
-    .setColor("#9B59FF")
+  return new EmbedBuilder()
+    .setColor(fortuneColors[fortune] || "#9B59FF")
     .setAuthor({
       name: `${displayName} 的占卜結果`,
       iconURL: avatar
     })
-    .setTitle("🍁 皮卡皮卡皮卡占卜 🍁")
+    .setTitle("🍀今日運勢")
     .setDescription(
-      `👤 **抽籤者：${displayName}**\n\n` +
-      `🍀 **今日運勢：${fortune}**`
+      `**${fortune}**\n⭐ 幸運指數：**${luckyScore}/100**`
     )
     .setThumbnail(avatar)
     .addFields(
@@ -118,11 +130,6 @@ function createFortuneEmbed(user, member) {
         inline: true
       },
       {
-        name: "📡 幸運頻道",
-        value: `CH ${channel}`,
-        inline: true
-      },
-      {
         name: "👹 打王運",
         value: `${boss}%`,
         inline: true
@@ -133,7 +140,17 @@ function createFortuneEmbed(user, member) {
         inline: true
       },
       {
-        name: "🥠 公會籤詩",
+        name: "📡 幸運頻道",
+        value: `CH ${channel}`,
+        inline: true
+      },
+      {
+        name: "⭐ 歐氣值",
+        value: `${luckyScore}/100`,
+        inline: true
+      },
+      {
+        name: "🥠 今日籤詩",
         value: poem,
         inline: false
       },
@@ -149,51 +166,54 @@ function createFortuneEmbed(user, member) {
       }
     )
     .setFooter({
-      text: "占卜內容僅供娛樂參考｜祝各位天天出貨、一發入魂 🍁"
+      text: "占卜內容僅供娛樂參考｜祝各位天天出貨 🍁"
     })
     .setTimestamp();
-
-  return embed;
 }
 
 function createButtonRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("draw_fortune")
-      .setLabel("🍀 抽今日運勢")
-      .setStyle(ButtonStyle.Primary)
+      .setLabel("🍀 再抽一次")
+      .setStyle(ButtonStyle.Success)
   );
 }
 
 client.once("ready", () => {
   console.log(`✅ ${client.user.tag} 已上線`);
-  console.log("✅ -占卜 指令已啟用");
 });
 
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
-  if (message.content.trim() !== "-占卜") return;
 
-  const embed = createFortuneEmbed(message.author, message.member);
-  const row = createButtonRow();
+  if (message.content.trim() === "-占卜") {
+    const embed = createFortuneEmbed(
+      message.author,
+      message.member
+    );
 
-  await message.reply({
-    embeds: [embed],
-    components: [row]
-  });
+    await message.reply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+  }
 });
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
-  if (interaction.customId !== "draw_fortune") return;
 
-  const embed = createFortuneEmbed(interaction.user, interaction.member);
-  const row = createButtonRow();
+  if (interaction.customId === "draw_fortune") {
+    const embed = createFortuneEmbed(
+      interaction.user,
+      interaction.member
+    );
 
-  await interaction.reply({
-    embeds: [embed],
-    components: [row]
-  });
+    await interaction.reply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+  }
 });
 
 client.login(TOKEN);
