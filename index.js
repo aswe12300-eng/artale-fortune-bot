@@ -89,7 +89,7 @@ client.on("messageCreate", async message => {
   const oracle = pick(oracleList);
 
   await message.reply(
-`🍁 **Artale 今日占卜** 🍁
+`🍁 **皮卡皮卡皮卡占卜** 🍁
 
 👤 抽籤者：${message.member?.displayName || message.author.username}
 
