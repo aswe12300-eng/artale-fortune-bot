@@ -1,4 +1,12 @@
-const { Client, GatewayIntentBits } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require("discord.js");
+
 const http = require("http");
 
 http.createServer((req, res) => {
@@ -68,15 +76,7 @@ const oracleList = [
   "歐洲人請自重，非洲人請明日再戰。"
 ];
 
-client.once("ready", () => {
-  console.log(`✅ ${client.user.tag} 已上線`);
-  console.log("✅ -占卜 指令已啟用");
-});
-
-client.on("messageCreate", async message => {
-  if (message.author.bot) return;
-  if (message.content.trim() !== "-占卜") return;
-
+function createFortuneEmbed(user, member) {
   const drop = random(1, 100);
   const enhance = random(1, 100);
   const boss = random(1, 100);
@@ -88,38 +88,112 @@ client.on("messageCreate", async message => {
   const poem = pick(poemList);
   const oracle = pick(oracleList);
 
-  await message.reply(
-`🍁 **皮卡皮卡皮卡占卜** 🍁
+  const displayName = member?.displayName || user.username;
+  const avatar = user.displayAvatarURL({
+    extension: "png",
+    size: 512
+  });
 
-👤 抽籤者：${message.member?.displayName || message.author.username}
+  const embed = new EmbedBuilder()
+    .setColor("#9B59FF")
+    .setAuthor({
+      name: `${displayName} 的占卜結果`,
+      iconURL: avatar
+    })
+    .setTitle("🍁 皮卡皮卡皮卡占卜 🍁")
+    .setDescription(
+      `👤 **抽籤者：${displayName}**\n\n` +
+      `🍀 **今日運勢：${fortune}**`
+    )
+    .setThumbnail(avatar)
+    .addFields(
+      {
+        name: "💰 掉寶運",
+        value: `${drop}%`,
+        inline: true
+      },
+      {
+        name: "⚒️ 衝裝運",
+        value: `${enhance}%`,
+        inline: true
+      },
+      {
+        name: "📡 幸運頻道",
+        value: `CH ${channel}`,
+        inline: true
+      },
+      {
+        name: "👹 打王運",
+        value: `${boss}%`,
+        inline: true
+      },
+      {
+        name: "🎲 轉蛋運",
+        value: `${gacha}%`,
+        inline: true
+      },
+      {
+        name: "🥠 公會籤詩",
+        value: poem,
+        inline: false
+      },
+      {
+        name: "📜 今日建議",
+        value: advice,
+        inline: false
+      },
+      {
+        name: "💸 公會神諭",
+        value: oracle,
+        inline: false
+      }
+    )
+    .setFooter({
+      text: "占卜內容僅供娛樂參考｜祝各位天天出貨、一發入魂 🍁"
+    })
+    .setTimestamp();
 
-🍀 今日運勢：${fortune}
+  return embed;
+}
 
-💰 掉寶運：${drop}%
-⚒️ 衝裝運：${enhance}%
-📡 幸運頻道：CH ${channel}
-👹 打王運：${boss}%
-🎲 轉蛋運：${gacha}%
-
-📜 今日建議：
-${advice}
-
-🥠 公會籤詩：
-${poem}
-
-💸 公會神諭：
-${oracle}
-
-━━━━━━━━━━━━━━
-
-⚠️ 本占卜內容僅供娛樂參考
-
-掉寶率、衝裝率、幸運頻道、
-打王運與轉蛋運皆為隨機產生，
-實際結果請以遊戲內狀況為準。
-
-祝各位天天出貨、一發入魂 🍁`
+function createButtonRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("draw_fortune")
+      .setLabel("🍀 抽今日運勢")
+      .setStyle(ButtonStyle.Primary)
   );
+}
+
+client.once("ready", () => {
+  console.log(`✅ ${client.user.tag} 已上線`);
+  console.log("✅ -占卜 指令已啟用");
+});
+
+client.on("messageCreate", async message => {
+  if (message.author.bot) return;
+  if (message.content.trim() !== "-占卜") return;
+
+  const embed = createFortuneEmbed(message.author, message.member);
+  const row = createButtonRow();
+
+  await message.reply({
+    embeds: [embed],
+    components: [row]
+  });
+});
+
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
+  if (interaction.customId !== "draw_fortune") return;
+
+  const embed = createFortuneEmbed(interaction.user, interaction.member);
+  const row = createButtonRow();
+
+  await interaction.reply({
+    embeds: [embed],
+    components: [row]
+  });
 });
 
 client.login(TOKEN);
