@@ -100,7 +100,7 @@ client.on("interactionCreate", async interaction => {
     const oracle = pick(oracleList);
 
     await interaction.reply(
-🍁 **Artale 今日占卜** 🍁
+`🍁 **Artale 今日占卜** 🍁
 
 👤 抽籤者：${interaction.user.displayName}
 
@@ -108,9 +108,9 @@ client.on("interactionCreate", async interaction => {
 
 💰 掉寶運：${drop}%
 ⚒️ 衝裝運：${enhance}%
-📡 幸運頻道：CH ${channel}
 👹 打王運：${boss}%
 🎲 轉蛋運：${gacha}%
+📡 幸運頻道：CH ${channel}
 
 📜 今日建議：
 ${advice}
