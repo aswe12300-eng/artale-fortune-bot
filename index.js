@@ -20,7 +20,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -215,5 +216,41 @@ client.on("interactionCreate", async interaction => {
     });
   }
 });
+// =====================
+// 成員離開通知
+// =====================
 
+const LEAVE_CHANNEL_ID = "1497601369518116874";
+
+client.on("guildMemberRemove", async member => {
+  try {
+    const channel = member.guild.channels.cache.get(
+      LEAVE_CHANNEL_ID
+    );
+
+    if (!channel) return;
+
+    const displayName =
+      member.displayName ||
+      member.nickname ||
+      member.user.username;
+
+    const embed = new EmbedBuilder()
+  .setColor("#E74C3C")
+  .setTitle("📤 成員離開通知")
+  .setDescription(
+    `**${displayName}** 已離開 EtheReal`
+  )
+  .setFooter({
+    text: "管理專用通知"
+  })
+  .setTimestamp();
+    await channel.send({
+      embeds: [embed]
+    });
+
+  } catch (err) {
+    console.error(err);
+  }
+});
 client.login(TOKEN);
