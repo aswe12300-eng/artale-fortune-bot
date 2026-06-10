@@ -9,6 +9,24 @@ const {
 
 const http = require("http");
 
+const fs = require("fs");
+
+const DATA_FILE = "./levels.json";
+
+let levelData = {};
+
+if (fs.existsSync(DATA_FILE)) {
+  levelData = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+}
+
+function saveLevelData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(levelData, null, 2));
+}
+
+function getLevel(xp) {
+  return Math.floor(Math.sqrt(xp / 10));
+}
+
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot Running");
@@ -187,6 +205,53 @@ client.once("ready", () => {
 
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
+  if (!message.guild) return;
+
+  const userId = message.author.id;
+  const displayName = message.member?.displayName || message.author.username;
+
+  if (!levelData[userId]) {
+    levelData[userId] = {
+      xp: 0,
+      name: displayName
+    };
+  }
+
+  levelData[userId].xp += 5;
+  levelData[userId].name = displayName;
+  saveLevelData();
+
+  if (message.content.trim() === "-等級") {
+    const xp = levelData[userId].xp;
+    const level = getLevel(xp);
+
+    return message.reply(
+      `📈 **${displayName}** 目前等級：Lv.${level}\n⭐ 活躍值：${xp}`
+    );
+  }
+
+  if (message.content.trim() === "-排行榜") {
+    const ranking = Object.entries(levelData)
+      .sort((a, b) => b[1].xp - a[1].xp)
+      .slice(0, 10);
+
+    const text = ranking
+      .map(([id, data], index) => {
+        return `**${index + 1}. ${data.name}**｜Lv.${getLevel(data.xp)}｜${data.xp} 活躍值`;
+      })
+      .join("\n");
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#FFD700")
+          .setTitle("🏆 EtheReal DC 活躍排行榜")
+          .setDescription(text || "目前還沒有排行榜資料")
+          .setFooter({ text: "依照 Discord 發言活躍度統計" })
+          .setTimestamp()
+      ]
+    });
+  }
 
   if (message.content.trim() === "-占卜") {
     const embed = createFortuneEmbed(
