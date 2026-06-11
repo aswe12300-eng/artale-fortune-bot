@@ -294,7 +294,7 @@ client.on("messageCreate", async message => {
   if (!IGNORED_XP_CHANNELS.includes(message.channel.id)) {
   const oldLevel = getLevel(levelData[userId].xp);
 
-  levelData[userId].xp += 5;
+ levelData[userId].xp += 1;
   levelData[userId].name = displayName;
 
   const newLevel = getLevel(levelData[userId].xp);
