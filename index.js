@@ -274,6 +274,10 @@ client.on("messageCreate", async message => {
     `[XP] ${message.guild?.name} | #${message.channel.name} | ${message.author.username}`
   );
 
+  console.log(
+    `[XP CHECK] ${message.channel.name} (${message.channel.id})`
+  );
+
   if (message.author.bot) return;
   if (!message.guild) return;
 
