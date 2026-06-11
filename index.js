@@ -27,6 +27,19 @@ function getLevel(xp) {
   return Math.floor(Math.sqrt(xp / 10));
 }
 
+function getRequiredXp(level) {
+  return (level + 1) * (level + 1) * 10;
+}
+
+function createExpBar(currentXp, requiredXp) {
+  const totalBars = 10;
+  const percent = currentXp / requiredXp;
+  const filledBars = Math.floor(percent * totalBars);
+  const emptyBars = totalBars - filledBars;
+
+  return "🟩".repeat(filledBars) + "⬜".repeat(emptyBars);
+}
+
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot Running");
@@ -267,13 +280,33 @@ client.on("messageCreate", async message => {
   saveLevelData();
 
   if (message.content.trim() === "-等級") {
-    const xp = levelData[userId].xp;
-    const level = getLevel(xp);
+  const xp = levelData[userId].xp;
+  const level = getLevel(xp);
 
-    return message.reply(
-      `📈 **${displayName}** 目前等級：Lv.${level}\n⭐ 活躍值：${xp}`
-    );
-  }
+  const currentLevelXp = level * level * 10;
+  const nextLevelXp = getRequiredXp(level);
+  const progressXp = xp - currentLevelXp;
+  const requiredXp = nextLevelXp - currentLevelXp;
+  const percent = Math.floor((progressXp / requiredXp) * 100);
+  const expBar = createExpBar(progressXp, requiredXp);
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#9B59FF")
+        .setTitle(`📊 ${displayName} 的冒險紀錄`)
+        .setDescription(
+          `🏅 **等級**\nLv.${level}\n\n` +
+          `⭐ **經驗值**\n${progressXp} / ${requiredXp}\n\n` +
+          `${expBar} **${percent}%**\n\n` +
+          `🔥 **總活躍值**\n${xp}`
+        )
+        .setThumbnail(message.author.displayAvatarURL({ extension: "png", size: 256 }))
+        .setFooter({ text: "EtheReal 活躍等級系統" })
+        .setTimestamp()
+    ]
+  });
+}
 
   if (message.content.trim() === "-排行榜") {
     const ranking = Object.entries(levelData)
