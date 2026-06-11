@@ -355,12 +355,22 @@ client.on("messageCreate", async message => {
       new EmbedBuilder()
         .setColor("#9B59FF")
         .setTitle(`📊 ${displayName} 的冒險紀錄`)
-        .setDescription(
-          `🏅 **等級**\nLv.${level}\n\n` +
-          `⭐ **經驗值**\n${progressXp} / ${requiredXp}\n\n` +
-          `${expBar} **${percent}%**\n\n` +
-          `🔥 **總活躍值**\n${xp}`
-        )
+        .addFields(
+  {
+    name: "🏅 等級",
+    value: `Lv.${level}`,
+    inline: true
+  },
+  {
+    name: "🔥 活躍值",
+    value: `${xp}`,
+    inline: true
+  },
+  {
+    name: "⭐ 經驗條",
+    value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`
+  }
+)
         .setThumbnail(message.author.displayAvatarURL({ extension: "png", size: 256 }))
         .setFooter({ text: "EtheReal 活躍等級系統" })
         .setTimestamp()
