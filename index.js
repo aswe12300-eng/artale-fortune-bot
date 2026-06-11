@@ -268,8 +268,6 @@ client.on("messageCreate", async message => {
 
   if (message.author.bot) return;
   if (!message.guild) return;
-  if (message.author.bot) return;
-  if (!message.guild) return;
 
   const userId = message.author.id;
   const displayName = message.member?.displayName || message.author.username;
