@@ -349,31 +349,22 @@ client.on("messageCreate", async message => {
   });
 }
   if (message.content.trim() === "-檢查頻道") {
+
   const channels = message.guild.channels.cache
-    .filter(channel => channel.isTextBased());
+    .filter(c => c.isTextBased());
 
   let result = "";
 
   channels.forEach(channel => {
-    const perms = channel.permissionsFor(client.user);
 
-    if (perms && perms.has("ViewChannel")) {
-      result += `✅ ${channel.name}\n`;
-    } else {
-      result += `❌ ${channel.name}\n`;
-    }
+    const xpEnabled = !IGNORED_XP_CHANNELS.includes(channel.id);
+
+    result += xpEnabled
+      ? `🟢 ${channel.name}\n`
+      : `🔴 ${channel.name}\n`;
   });
 
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#3498DB")
-        .setTitle("📋 Bot 可讀取頻道檢查")
-        .setDescription(result || "沒有找到頻道資料")
-        .setFooter({ text: "✅ 代表 Bot 看得到，通常會計算 XP" })
-        .setTimestamp()
-    ]
-  });
+  return message.reply(result);
 }
   if (message.content.trim() === "-排行榜") {
     const ranking = Object.entries(levelData)
