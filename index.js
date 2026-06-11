@@ -245,9 +245,8 @@ client.on("guildMemberAdd", member => {
 
 client.on("guildMemberUpdate", (oldMember, newMember) => {
   const displayName =
-  levelData[member.id]?.name ||
-  member.displayName ||
-  member.user.username;
+    newMember.displayName ||
+    newMember.user.username;
 
   if (!levelData[newMember.id]) {
     levelData[newMember.id] = {
@@ -314,7 +313,33 @@ client.on("messageCreate", async message => {
     ]
   });
 }
+  if (message.content.trim() === "-檢查頻道") {
+  const channels = message.guild.channels.cache
+    .filter(channel => channel.isTextBased());
 
+  let result = "";
+
+  channels.forEach(channel => {
+    const perms = channel.permissionsFor(client.user);
+
+    if (perms && perms.has("ViewChannel")) {
+      result += `✅ ${channel.name}\n`;
+    } else {
+      result += `❌ ${channel.name}\n`;
+    }
+  });
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#3498DB")
+        .setTitle("📋 Bot 可讀取頻道檢查")
+        .setDescription(result || "沒有找到頻道資料")
+        .setFooter({ text: "✅ 代表 Bot 看得到，通常會計算 XP" })
+        .setTimestamp()
+    ]
+  });
+}
   if (message.content.trim() === "-排行榜") {
     const ranking = Object.entries(levelData)
       .sort((a, b) => b[1].xp - a[1].xp)
@@ -350,33 +375,9 @@ client.on("messageCreate", async message => {
     });
   }
 });
-if (message.content.trim() === "-檢查頻道") {
-  const channels = message.guild.channels.cache
-    .filter(channel => channel.isTextBased());
 
-  let result = "";
 
-  channels.forEach(channel => {
-    const perms = channel.permissionsFor(client.user);
-
-    if (perms && perms.has("ViewChannel")) {
-      result += `✅ ${channel.name}\n`;
-    } else {
-      result += `❌ ${channel.name}\n`;
-    }
-  });
-
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#3498DB")
-        .setTitle("📋 Bot 可讀取頻道檢查")
-        .setDescription(result || "沒有找到頻道資料")
-        .setFooter({ text: "✅ 代表 Bot 看得到，通常會計算 XP" })
-        .setTimestamp()
-    ]
-  });
-}
+client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "draw_fortune") {
