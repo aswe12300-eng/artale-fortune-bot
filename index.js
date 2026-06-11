@@ -206,6 +206,48 @@ client.once("ready", () => {
   console.log(`✅ ${client.user.tag} 已上線`);
 });
 
+// =====================
+// 新成員加入時紀錄暱稱
+// =====================
+
+client.on("guildMemberAdd", member => {
+  const displayName =
+    member.displayName ||
+    member.user.username;
+
+  if (!levelData[member.id]) {
+    levelData[member.id] = {
+      xp: 0,
+      name: displayName
+    };
+  } else {
+    levelData[member.id].name = displayName;
+  }
+
+  saveLevelData();
+});
+// =====================
+// 成員改暱稱時更新
+// =====================
+
+client.on("guildMemberUpdate", (oldMember, newMember) => {
+  const displayName =
+  levelData[member.id]?.name ||
+  member.displayName ||
+  member.user.username;
+
+  if (!levelData[newMember.id]) {
+    levelData[newMember.id] = {
+      xp: 0,
+      name: displayName
+    };
+  } else {
+    levelData[newMember.id].name = displayName;
+  }
+
+  saveLevelData();
+});
+
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
