@@ -262,6 +262,13 @@ client.on("guildMemberUpdate", (oldMember, newMember) => {
 });
 
 client.on("messageCreate", async message => {
+
+  console.log(
+    `[XP] ${message.guild?.name} | #${message.channel.name} | ${message.author.username}`
+  );
+
+  if (message.author.bot) return;
+  if (!message.guild) return;
   if (message.author.bot) return;
   if (!message.guild) return;
 
