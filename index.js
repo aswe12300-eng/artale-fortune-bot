@@ -284,6 +284,10 @@ client.on("messageCreate", async message => {
   levelData[userId].xp += 5;
   levelData[userId].name = displayName;
   saveLevelData();
+  
+  if (message.content.trim() === "-檢查頻道") {
+  return message.reply("✅ 檢查頻道指令有觸發");
+}
 
   if (message.content.trim() === "-等級") {
   const xp = levelData[userId].xp;
