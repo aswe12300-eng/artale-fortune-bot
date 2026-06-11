@@ -284,10 +284,6 @@ client.on("messageCreate", async message => {
   levelData[userId].xp += 5;
   levelData[userId].name = displayName;
   saveLevelData();
-  
-  if (message.content.trim() === "-檢查頻道") {
-  return message.reply("✅ 檢查頻道指令有觸發");
-}
 
   if (message.content.trim() === "-等級") {
   const xp = levelData[userId].xp;
@@ -407,7 +403,10 @@ client.on("guildMemberRemove", async member => {
     const channel = member.guild.channels.cache.get(LEAVE_CHANNEL_ID);
     if (!channel) return;
 
-    const displayName = member.displayName || member.user.username;
+    const displayName =
+  levelData[member.id]?.name ||
+  member.displayName ||
+  member.user.username;
 
     const embed = new EmbedBuilder()
       .setColor("#E74C3C")
