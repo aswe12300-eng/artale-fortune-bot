@@ -119,7 +119,10 @@ function createFortuneEmbed(user, member) {
     "💀 大凶": "#E74C3C"
   };
 
-  const displayName = member?.displayName || user.username;
+  const displayName =
+  levelData[member.id]?.name ||
+  member.displayName ||
+  member.user.username;
 
   const avatar = user.displayAvatarURL({
     extension: "png",
