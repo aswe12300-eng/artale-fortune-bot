@@ -288,9 +288,32 @@ client.on("messageCreate", async message => {
   }
 
   if (!IGNORED_XP_CHANNELS.includes(message.channel.id)) {
+  const oldLevel = getLevel(levelData[userId].xp);
+
   levelData[userId].xp += 5;
   levelData[userId].name = displayName;
+
+  const newLevel = getLevel(levelData[userId].xp);
+
   saveLevelData();
+
+  if (newLevel > oldLevel) {
+    const levelUpEmbed = new EmbedBuilder()
+      .setColor("#F1C40F")
+      .setTitle("🎉 Level Up！")
+      .setDescription(
+        `恭喜 **${displayName}** 等級提升！\n\n` +
+        `🏅 Lv.${oldLevel} ➜ **Lv.${newLevel}**\n\n` +
+        `🍁 繼續保持活躍，一起讓 EtheReal 更熱鬧！`
+      )
+      .setThumbnail(message.author.displayAvatarURL({ extension: "png", size: 256 }))
+      .setFooter({ text: "EtheReal 活躍等級系統" })
+      .setTimestamp();
+
+    await message.channel.send({
+      embeds: [levelUpEmbed]
+    });
+  }
 }
 
   if (message.content.trim() === "-等級") {
