@@ -351,24 +351,32 @@ client.on("messageCreate", async message => {
   }
 });
 if (message.content.trim() === "-檢查頻道") {
-
   const channels = message.guild.channels.cache
-    .filter(c => c.isTextBased());
+    .filter(channel => channel.isTextBased());
 
   let result = "";
 
   channels.forEach(channel => {
     const perms = channel.permissionsFor(client.user);
 
-    result += perms.has("ViewChannel")
-      ? `✅ ${channel.name}\n`
-      : `❌ ${channel.name}\n`;
+    if (perms && perms.has("ViewChannel")) {
+      result += `✅ ${channel.name}\n`;
+    } else {
+      result += `❌ ${channel.name}\n`;
+    }
   });
 
-  return message.reply(result);
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#3498DB")
+        .setTitle("📋 Bot 可讀取頻道檢查")
+        .setDescription(result || "沒有找到頻道資料")
+        .setFooter({ text: "✅ 代表 Bot 看得到，通常會計算 XP" })
+        .setTimestamp()
+    ]
+  });
 }
-
-client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "draw_fortune") {
