@@ -350,6 +350,23 @@ client.on("messageCreate", async message => {
     });
   }
 });
+if (message.content.trim() === "-檢查頻道") {
+
+  const channels = message.guild.channels.cache
+    .filter(c => c.isTextBased());
+
+  let result = "";
+
+  channels.forEach(channel => {
+    const perms = channel.permissionsFor(client.user);
+
+    result += perms.has("ViewChannel")
+      ? `✅ ${channel.name}\n`
+      : `❌ ${channel.name}\n`;
+  });
+
+  return message.reply(result);
+}
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
