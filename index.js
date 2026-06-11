@@ -13,6 +13,10 @@ const fs = require("fs");
 
 const DATA_FILE = "./levels.json";
 
+const IGNORED_XP_CHANNELS = [
+  "1497601369518116874"
+];
+
 let levelData = {};
 
 if (fs.existsSync(DATA_FILE)) {
@@ -279,9 +283,11 @@ client.on("messageCreate", async message => {
     };
   }
 
+  if (!IGNORED_XP_CHANNELS.includes(message.channel.id)) {
   levelData[userId].xp += 5;
   levelData[userId].name = displayName;
   saveLevelData();
+}
 
   if (message.content.trim() === "-等級") {
   const xp = levelData[userId].xp;
