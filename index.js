@@ -10,6 +10,7 @@ const {
 const http = require("http");
 
 const fs = require("fs");
+const { google } = require("googleapis");
 
 const DATA_FILE = "./levels.json";
 
@@ -49,13 +50,72 @@ function createExpBar(currentXp, requiredXp) {
 
   return "🟩".repeat(filledBars) + "⬜".repeat(emptyBars);
 }
+async function loadLevelsFromSheet() {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:E"
+  });
 
+  const rows = res.data.values || [];
+
+  rows.forEach(row => {
+    const [id, name, xp] = row;
+
+    if (id) {
+      levelData[id] = {
+        name: name || "未知成員",
+        xp: Number(xp) || 0
+      };
+    }
+  });
+
+  console.log("✅ 已從 Google Sheets 載入 XP");
+}
+
+async function saveLevelsToSheet() {
+  const values = Object.entries(levelData).map(([id, data]) => [
+    id,
+    data.name,
+    data.xp,
+    getLevel(data.xp),
+    new Date().toLocaleString("zh-TW")
+  ]);
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:E"
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:E",
+    valueInputOption: "RAW",
+    requestBody: {
+      values
+    }
+  });
+}
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot Running");
 }).listen(process.env.PORT || 3000);
 
 const TOKEN = process.env.DISCORD_TOKEN;
+const SHEET_ID = process.env.SHEET_ID;
+const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
+const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+const auth = new google.auth.JWT(
+  GOOGLE_CLIENT_EMAIL,
+  null,
+  GOOGLE_PRIVATE_KEY,
+  ["https://www.googleapis.com/auth/spreadsheets"]
+);
+
+const sheets = google.sheets({
+  version: "v4",
+  auth
+});
 
 const client = new Client({
   intents: [
