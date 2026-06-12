@@ -285,7 +285,8 @@ function createButtonRow() {
   );
 }
 
-client.once("ready", () => {
+client.once("ready", async () => {
+  await loadLevelsFromSheet();
   console.log(`✅ ${client.user.tag} 已上線`);
 });
 
@@ -363,15 +364,15 @@ client.on("messageCreate", async message => {
 
     const oldLevel = getLevel(levelData[userId].xp);
 
-    levelData[userId].xp += 1;
-    levelData[userId].name = displayName;
+   levelData[userId].xp += 1;
+levelData[userId].name = displayName;
 
-    const newLevel = getLevel(levelData[userId].xp);
+const newLevel = getLevel(levelData[userId].xp);
 
-    xpCooldown.set(userId, now);
+xpCooldown.set(userId, now);
 
-    saveLevelData();
-
+saveLevelData();
+await saveLevelsToSheet();
     if (newLevel > oldLevel) {
 
       const levelUpEmbed = new EmbedBuilder()
