@@ -53,13 +53,13 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:F"
+    range: "工作表1!A2:G"
   });
 
   const rows = res.data.values || [];
 
   rows.forEach(row => {
-    const [guildId, userId, name, xp] = row;
+    const [guildId, userId, name, xp, level, messages] = row;
 
     if (guildId && userId) {
       if (!levelData[guildId]) {
@@ -67,9 +67,10 @@ async function loadLevelsFromSheet() {
       }
 
       levelData[guildId][userId] = {
-        name: name || "未知成員",
-        xp: Number(xp) || 0
-      };
+  name: name || "未知成員",
+  xp: Number(xp) || 0,
+  messages: Number(messages) || 0
+};;
     }
   });
 
@@ -82,26 +83,27 @@ async function saveLevelsToSheet() {
   Object.entries(levelData).forEach(([guildId, users]) => {
     Object.entries(users).forEach(([userId, data]) => {
       values.push([
-        guildId,
-        userId,
-        data.name || "未知成員",
-        data.xp || 0,
-        getLevel(data.xp || 0),
-        new Date().toLocaleString("zh-TW", {
-          timeZone: "Asia/Taipei"
-        })
-      ]);
+  guildId,
+  userId,
+  data.name || "未知成員",
+  data.xp || 0,
+  getLevel(data.xp || 0),
+  data.messages || 0,
+  new Date().toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei"
+  })
+]);
     });
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:F"
+    range: "工作表1!A2:G"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:F",
+    range: "工作表1!A2:G",
     valueInputOption: "RAW",
     requestBody: {
       values
@@ -320,7 +322,8 @@ client.on("guildMemberAdd", member => {
   if (!levelData[guildId][member.id]) {
     levelData[guildId][member.id] = {
       xp: 0,
-      name: displayName
+name: displayName,
+messages: 0
     };
   } else {
     levelData[guildId][member.id].name = displayName;
@@ -340,7 +343,8 @@ client.on("guildMemberUpdate", (oldMember, newMember) => {
   if (!levelData[newMember.id]) {
     levelData[newMember.id] = {
       xp: 0,
-      name: displayName
+name: displayName,
+messages: 0
     };
   } else {
     levelData[newMember.id].name = displayName;
@@ -373,7 +377,8 @@ if (!levelData[guildId]) {
 if (!levelData[guildId][userId]) {
   levelData[guildId][userId] = {
     xp: 0,
-    name: displayName
+name: displayName,
+messages: 0
   };
 }
 
@@ -389,8 +394,10 @@ const userData = levelData[guildId][userId];
 
     const oldLevel = getLevel(userData.xp);
 
-   userData.xp += 1;
+  userData.xp += 1;
 userData.name = displayName;
+
+userData.messages = (userData.messages || 0) + 1;
 
 const newLevel = getLevel(userData.xp);
 
@@ -462,6 +469,11 @@ if (levelChannel) {
     value: `${xp}`,
     inline: true
   },
+          {
+  name: "💬 發言次數",
+  value: `${userData.messages || 0}`,
+  inline: true
+}
   {
     name: "⭐ 經驗條",
     value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`
