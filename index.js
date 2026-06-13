@@ -473,7 +473,7 @@ if (levelChannel) {
   name: "💬 發言次數",
   value: `${userData.messages || 0}`,
   inline: true
-}
+},
   {
     name: "⭐ 經驗條",
     value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`
