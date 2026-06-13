@@ -216,7 +216,7 @@ function createFortuneEmbed(user, member) {
   };
 
   const displayName =
-  levelData[member.id]?.name ||
+  levelData[member.guild.id]?.[member.id]?.name ||
   member.displayName ||
   member.user.username;
 
@@ -308,17 +308,22 @@ client.once("ready", async () => {
 // =====================
 
 client.on("guildMemberAdd", member => {
+  const guildId = member.guild.id;
   const displayName =
     member.displayName ||
     member.user.username;
 
-  if (!levelData[member.id]) {
-    levelData[member.id] = {
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
+  }
+
+  if (!levelData[guildId][member.id]) {
+    levelData[guildId][member.id] = {
       xp: 0,
       name: displayName
     };
   } else {
-    levelData[member.id].name = displayName;
+    levelData[guildId][member.id].name = displayName;
   }
 
   saveLevelData();
@@ -552,7 +557,7 @@ client.on("guildMemberRemove", async member => {
     if (!channel) return;
 
     const displayName =
-  levelData[member.id]?.name ||
+  levelData[member.guild.id]?.[member.id]?.name ||
   member.displayName ||
   member.user.username;
 
