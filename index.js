@@ -537,14 +537,20 @@ if (levelChannel) {
     value: `${xp}`,
     inline: true
   },
-          {
-  name: "💬 發言次數",
-  value: `${userData.messages || 0}`,
-  inline: true
-},
+  {
+    name: "💬 發言次數",
+    value: `${userData.messages || 0}`,
+    inline: true
+  },
+  {
+    name: "🏆 成就",
+    value: `${userData.achievements?.length || 0} 個`,
+    inline: true
+  },
   {
     name: "⭐ 經驗條",
-    value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`
+    value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`,
+    inline: false
   }
 )
         .setThumbnail(message.author.displayAvatarURL({ extension: "png", size: 256 }))
