@@ -44,7 +44,12 @@ function getRequiredXp(level) {
 
 function createExpBar(currentXp, requiredXp) {
   const totalBars = 10;
-  const percent = currentXp / requiredXp;
+
+  const safeCurrentXp = Math.max(0, currentXp);
+  const safeRequiredXp = Math.max(1, requiredXp);
+
+  const percent = Math.min(safeCurrentXp / safeRequiredXp, 1);
+
   const filledBars = Math.floor(percent * totalBars);
   const emptyBars = totalBars - filledBars;
 
@@ -450,7 +455,10 @@ if (levelChannel) {
   const nextLevelXp = getRequiredXp(level);
   const progressXp = xp - currentLevelXp;
   const requiredXp = nextLevelXp - currentLevelXp;
-  const percent = Math.floor((progressXp / requiredXp) * 100);
+  const percent = Math.min(
+  Math.floor((progressXp / requiredXp) * 100),
+  100
+);
   const expBar = createExpBar(progressXp, requiredXp);
 
   return message.reply({
