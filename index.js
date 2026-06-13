@@ -42,6 +42,18 @@ function getRequiredXp(level) {
   return (level + 1) * (level + 1) * 5;
 }
 
+// ===== 稱號系統 =====
+
+function getTitle(level) {
+  if (level >= 50) return "🌈 EtheReal 傳說";
+  if (level >= 30) return "👑 EtheReal 菁英";
+  if (level >= 20) return "🔥 核心成員";
+  if (level >= 10) return "⚔️ 活躍會員";
+  if (level >= 5) return "🌱 公會新兵";
+
+  return "🍁 初心冒險者";
+}
+
 function createExpBar(currentXp, requiredXp) {
   const totalBars = 10;
 
@@ -510,6 +522,7 @@ if (levelChannel) {
   if (message.content.trim() === "-等級") {
   const xp = userData.xp;
   const level = getLevel(xp);
+    const title = getTitle(level);
 
   const currentLevelXp = level * level * 5;
   const nextLevelXp = getRequiredXp(level);
@@ -532,6 +545,11 @@ if (levelChannel) {
     value: `Lv.${level}`,
     inline: true
   },
+          {
+  name: "🎖 稱號",
+  value: title,
+  inline: true
+},
   {
     name: "🔥 活躍值",
     value: `${xp}`,
