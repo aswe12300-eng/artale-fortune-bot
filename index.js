@@ -70,13 +70,13 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:G"
+    range: "工作表1!A2:H"
   });
 
   const rows = res.data.values || [];
 
   rows.forEach(row => {
-    const [guildId, userId, name, xp, level, messages] = row;
+    const [guildId, userId, name, xp, level, messages, achievements] = row;
 
     if (guildId && userId) {
       if (!levelData[guildId]) {
@@ -86,7 +86,10 @@ async function loadLevelsFromSheet() {
       levelData[guildId][userId] = {
   name: name || "未知成員",
   xp: Number(xp) || 0,
-  messages: Number(messages) || 0
+  messages: Number(messages) || 0,
+  achievements: achievements
+    ? achievements.split(",")
+    : []
 };;
     }
   });
@@ -99,13 +102,14 @@ async function saveLevelsToSheet() {
 
   Object.entries(levelData).forEach(([guildId, users]) => {
     Object.entries(users).forEach(([userId, data]) => {
-      values.push([
+     values.push([
   guildId,
   userId,
   data.name || "未知成員",
   data.xp || 0,
   getLevel(data.xp || 0),
   data.messages || 0,
+  (data.achievements || []).join(","),
   new Date().toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei"
   })
@@ -115,12 +119,12 @@ async function saveLevelsToSheet() {
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:G"
+    range: "工作表1!A2:H"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:G",
+    range: "工作表1!A2:H",
     valueInputOption: "RAW",
     requestBody: {
       values
