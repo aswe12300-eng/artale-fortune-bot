@@ -421,13 +421,7 @@ client.on("guildMemberAdd", member => {
 // 成員改暱稱時更新
 // =====================
 
-client.on("guildMemberUpdate", (oldMember, newMember) => {
-  const displayName =
-    newMember.displayName ||
-    newMember.user.username;
-
-  client.on("guildMemberUpdate", async (oldMember, newMember) => {
-
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
   const displayName =
     newMember.displayName ||
     newMember.user.username;
@@ -439,26 +433,23 @@ client.on("guildMemberUpdate", (oldMember, newMember) => {
   }
 
   if (!levelData[guildId][newMember.id]) {
-
     levelData[guildId][newMember.id] = {
       xp: 0,
       name: displayName,
       messages: 0,
       achievements: []
     };
-
   } else {
-
-    levelData[guildId][newMember.id].name =
-      displayName;
-
+    levelData[guildId][newMember.id].name = displayName;
   }
 
-  await saveLevelsToSheet();
+  saveLevelData();
 
-});
-
-  await saveLevelsToSheet();
+  try {
+    await saveLevelsToSheet();
+  } catch (err) {
+    console.error("暱稱更新儲存失敗：", err);
+  }
 });
 
 client.on("messageCreate", async message => {
