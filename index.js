@@ -305,6 +305,63 @@ function createButtonRow() {
   );
 }
 
+// ===== 成就系統 =====
+
+async function checkAchievements(message, userData) {
+
+  const achievementChannel =
+    message.guild.channels.cache.get(ACHIEVEMENT_CHANNEL_ID);
+
+  if (!achievementChannel) return;
+
+  const achievements = userData.achievements || [];
+
+  const achievementList = [
+    {
+      id: "talk50",
+      name: "💬 話癆 I",
+      requirement: 50
+    },
+    {
+      id: "talk200",
+      name: "💬 話癆 II",
+      requirement: 200
+    },
+    {
+      id: "talk500",
+      name: "💬 話癆 III",
+      requirement: 500
+    }
+  ];
+
+  for (const achievement of achievementList) {
+
+    if (
+      userData.messages >= achievement.requirement &&
+      !achievements.includes(achievement.id)
+    ) {
+
+      achievements.push(achievement.id);
+
+      const embed = new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle("🏆 成就解鎖")
+        .setDescription(
+          `🎉 **${userData.name}** 解鎖成就！\n\n` +
+          `${achievement.name}\n` +
+          `累積發言 ${achievement.requirement} 次`
+        )
+        .setTimestamp();
+
+      await achievementChannel.send({
+        embeds: [embed]
+      });
+    }
+  }
+
+  userData.achievements = achievements;
+}
+
 client.once("ready", async () => {
   await loadLevelsFromSheet();
   console.log(`✅ ${client.user.tag} 已上線`);
@@ -326,10 +383,11 @@ client.on("guildMemberAdd", member => {
 
   if (!levelData[guildId][member.id]) {
     levelData[guildId][member.id] = {
-      xp: 0,
-name: displayName,
-messages: 0
-    };
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: []
+};
   } else {
     levelData[guildId][member.id].name = displayName;
   }
@@ -347,10 +405,11 @@ client.on("guildMemberUpdate", (oldMember, newMember) => {
 
   if (!levelData[newMember.id]) {
     levelData[newMember.id] = {
-      xp: 0,
-name: displayName,
-messages: 0
-    };
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: []
+};
   } else {
     levelData[newMember.id].name = displayName;
   }
@@ -381,10 +440,11 @@ if (!levelData[guildId]) {
 
 if (!levelData[guildId][userId]) {
   levelData[guildId][userId] = {
-    xp: 0,
-name: displayName,
-messages: 0
-  };
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: []
+};
 }
 
 const userData = levelData[guildId][userId];
@@ -403,7 +463,7 @@ const userData = levelData[guildId][userId];
 userData.name = displayName;
 
 userData.messages = (userData.messages || 0) + 1;
-
+await checkAchievements(message, userData);
 const newLevel = getLevel(userData.xp);
 
 xpCooldown.set(userId, now);
@@ -568,8 +628,10 @@ client.on("interactionCreate", async interaction => {
 // 成員離開通知
 // =====================
 
-const LEAVE_CHANNEL_ID = "1497601369518116874";
-const LEVEL_CHANNEL_ID = "1515361647722496182";
+// ===== 頻道設定 =====
+const LEAVE_CHANNEL_ID = "1497601369518116874";       // 管理群
+const LEVEL_CHANNEL_ID = "1515361647722496182";       // 公會紀錄
+const ACHIEVEMENT_CHANNEL_ID = "1515361647722496182"; // 公會紀錄
 
 client.on("guildMemberRemove", async member => {
   try {
