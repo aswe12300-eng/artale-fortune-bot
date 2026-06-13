@@ -482,27 +482,29 @@ try {
   return message.reply(result);
 }
   if (message.content.trim() === "-排行榜") {
-    const ranking = Object.entries(levelData)
-      .sort((a, b) => b[1].xp - a[1].xp)
-      .slice(0, 10);
+  const guildRanking = levelData[guildId] || {};
 
-    const text = ranking
-      .map(([id, data], index) => {
-        return `**${index + 1}. ${data.name}**｜Lv.${getLevel(data.xp)}｜${data.xp} 活躍值`;
-      })
-      .join("\n");
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => b[1].xp - a[1].xp)
+    .slice(0, 10);
 
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#FFD700")
-          .setTitle("🏆 EtheReal DC 活躍排行榜")
-          .setDescription(text || "目前還沒有排行榜資料")
-          .setFooter({ text: "依照 Discord 發言活躍度統計" })
-          .setTimestamp()
-      ]
-    });
-  }
+  const text = ranking
+    .map(([id, data], index) => {
+      return `**${index + 1}. ${data.name}**｜Lv.${getLevel(data.xp)}｜${data.xp} 活躍值`;
+    })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle("🏆 本伺服器 DC 活躍排行榜")
+        .setDescription(text || "目前還沒有排行榜資料")
+        .setFooter({ text: "依照本伺服器 Discord 發言活躍度統計" })
+        .setTimestamp()
+    ]
+  });
+}
 
   if (message.content.trim() === "-占卜") {
     const embed = createFortuneEmbed(
