@@ -88,8 +88,8 @@ async function loadLevelsFromSheet() {
   xp: Number(xp) || 0,
   messages: Number(messages) || 0,
   achievements: achievements
-    ? achievements.split(",")
-    : []
+  ? achievements.split(",").filter(a => a.startsWith("talk"))
+  : []
 };;
     }
   });
