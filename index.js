@@ -429,6 +429,7 @@ if (levelChannel) {
     }
   }
 }
+}
   if (message.content.trim() === "-等級") {
   const xp = userData.xp;
   const level = getLevel(xp);
