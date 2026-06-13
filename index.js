@@ -372,7 +372,12 @@ const newLevel = getLevel(levelData[userId].xp);
 xpCooldown.set(userId, now);
 
 saveLevelData();
-await saveLevelsToSheet();
+
+try {
+  await saveLevelsToSheet();
+} catch (err) {
+  console.error("Google Sheets 儲存失敗：", err);
+}
     if (newLevel > oldLevel) {
 
       const levelUpEmbed = new EmbedBuilder()
