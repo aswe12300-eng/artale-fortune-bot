@@ -39,7 +39,7 @@ function getLevel(xp) {
 }
 
 function getRequiredXp(level) {
-  return (level + 1) * (level + 1) * 10;
+  return (level + 1) * (level + 1) * 5;
 }
 
 function createExpBar(currentXp, requiredXp) {
@@ -451,7 +451,7 @@ if (levelChannel) {
   const xp = userData.xp;
   const level = getLevel(xp);
 
-  const currentLevelXp = level * level * 10;
+  const currentLevelXp = level * level * 5;
   const nextLevelXp = getRequiredXp(level);
   const progressXp = xp - currentLevelXp;
   const requiredXp = nextLevelXp - currentLevelXp;
