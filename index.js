@@ -53,42 +53,55 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:E"
+    range: "工作表1!A2:F"
   });
 
   const rows = res.data.values || [];
 
   rows.forEach(row => {
-    const [id, name, xp] = row;
+    const [guildId, userId, name, xp] = row;
 
-    if (id) {
-      levelData[id] = {
+    if (guildId && userId) {
+      if (!levelData[guildId]) {
+        levelData[guildId] = {};
+      }
+
+      levelData[guildId][userId] = {
         name: name || "未知成員",
         xp: Number(xp) || 0
       };
     }
   });
 
-  console.log("✅ 已從 Google Sheets 載入 XP");
+  console.log("✅ 已從 Google Sheets 載入多伺服器 XP");
 }
 
 async function saveLevelsToSheet() {
-  const values = Object.entries(levelData).map(([id, data]) => [
-    id,
-    data.name,
-    data.xp,
-    getLevel(data.xp),
-    new Date().toLocaleString("zh-TW")
-  ]);
+  const values = [];
+
+  Object.entries(levelData).forEach(([guildId, users]) => {
+    Object.entries(users).forEach(([userId, data]) => {
+      values.push([
+        guildId,
+        userId,
+        data.name || "未知成員",
+        data.xp || 0,
+        getLevel(data.xp || 0),
+        new Date().toLocaleString("zh-TW", {
+          timeZone: "Asia/Taipei"
+        })
+      ]);
+    });
+  });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:E"
+    range: "工作表1!A2:F"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:E",
+    range: "工作表1!A2:F",
     valueInputOption: "RAW",
     requestBody: {
       values
