@@ -357,15 +357,22 @@ client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  const userId = message.author.id;
-  const displayName = message.member?.displayName || message.author.username;
+  const guildId = message.guild.id;
+const userId = message.author.id;
+const displayName = message.member?.displayName || message.author.username;
 
-  if (!levelData[userId]) {
-    levelData[userId] = {
-      xp: 0,
-      name: displayName
-    };
-  }
+if (!levelData[guildId]) {
+  levelData[guildId] = {};
+}
+
+if (!levelData[guildId][userId]) {
+  levelData[guildId][userId] = {
+    xp: 0,
+    name: displayName
+  };
+}
+
+const userData = levelData[guildId][userId];
 
   if (!IGNORED_XP_CHANNELS.includes(message.channel.id)) {
 
@@ -375,12 +382,12 @@ client.on("messageCreate", async message => {
 
   if (now - lastXpTime >= cooldown) {
 
-    const oldLevel = getLevel(levelData[userId].xp);
+    const oldLevel = getLevel(userData.xp);
 
-   levelData[userId].xp += 1;
-levelData[userId].name = displayName;
+   userData.xp += 1;
+userData.name = displayName;
 
-const newLevel = getLevel(levelData[userId].xp);
+const newLevel = getLevel(userData.xp);
 
 xpCooldown.set(userId, now);
 
@@ -419,7 +426,7 @@ try {
   }
 }
   if (message.content.trim() === "-等級") {
-  const xp = levelData[userId].xp;
+  const xp = userData.xp;
   const level = getLevel(xp);
 
   const currentLevelXp = level * level * 10;
