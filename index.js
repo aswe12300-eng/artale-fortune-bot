@@ -419,9 +419,13 @@ try {
         })
         .setTimestamp();
 
-      await message.channel.send({
-        embeds: [levelUpEmbed]
-      });
+      const levelChannel =
+  message.guild.channels.cache.get(LEVEL_CHANNEL_ID);
+
+if (levelChannel) {
+  await levelChannel.send({
+    embeds: [levelUpEmbed]
+  });
     }
   }
 }
@@ -540,6 +544,7 @@ client.on("interactionCreate", async interaction => {
 // =====================
 
 const LEAVE_CHANNEL_ID = "1497601369518116874";
+const LEVEL_CHANNEL_ID = "1515361647722496182";
 
 client.on("guildMemberRemove", async member => {
   try {
