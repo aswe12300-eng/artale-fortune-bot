@@ -521,7 +521,7 @@ if (levelChannel) {
       components: [createButtonRow()]
     });
   }
-
+});
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
