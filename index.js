@@ -334,39 +334,46 @@ async function checkAchievements(message, userData) {
 
   const achievementList = [
     {
-      id: "talk50",
-      name: "💬 話癆 I",
-      requirement: 50
-    },
-    {
-      id: "talk200",
-      name: "💬 話癆 II",
-      requirement: 200
-    },
-    {
-      id: "talk500",
-      name: "💬 話癆 III",
-      requirement: 500
-    }
+  id: "talk50",
+  name: "💬 話癆 I",
+  requirement: 50,
+  reward: 10
+},
+{
+  id: "talk200",
+  name: "💬 話癆 II",
+  requirement: 200,
+  reward: 30
+},
+{
+  id: "talk500",
+  name: "💬 話癆 III",
+  requirement: 500,
+  reward: 100
+}
   ];
 
   for (const achievement of achievementList) {
 
     if (
-      userData.messages >= achievement.requirement &&
-      !achievements.includes(achievement.id)
-    ) {
+  userData.messages >= achievement.requirement &&
+  !achievements.includes(achievement.id)
+) {
 
-      achievements.push(achievement.id);
+  achievements.push(achievement.id);
 
-      const embed = new EmbedBuilder()
+  // 🎁 發放成就獎勵 XP
+  userData.xp += achievement.reward;
+
+  const embed = new EmbedBuilder()
         .setColor("#FFD700")
         .setTitle("🏆 成就解鎖")
         .setDescription(
-          `🎉 **${userData.name}** 解鎖成就！\n\n` +
-          `${achievement.name}\n` +
-          `累積發言 ${achievement.requirement} 次`
-        )
+  `🎉 **${userData.name}** 解鎖成就！\n\n` +
+  `${achievement.name}\n` +
+  `累積發言 ${achievement.requirement} 次\n\n` +
+  `🎁 獲得獎勵：+${achievement.reward} XP`
+)
         .setTimestamp();
 
       await achievementChannel.send({
