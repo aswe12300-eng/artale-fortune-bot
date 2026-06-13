@@ -426,18 +426,39 @@ client.on("guildMemberUpdate", (oldMember, newMember) => {
     newMember.displayName ||
     newMember.user.username;
 
-  if (!levelData[newMember.id]) {
-    levelData[newMember.id] = {
-  xp: 0,
-  name: displayName,
-  messages: 0,
-  achievements: []
-};
-  } else {
-    levelData[newMember.id].name = displayName;
+  client.on("guildMemberUpdate", async (oldMember, newMember) => {
+
+  const displayName =
+    newMember.displayName ||
+    newMember.user.username;
+
+  const guildId = newMember.guild.id;
+
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
   }
 
-  saveLevelData();
+  if (!levelData[guildId][newMember.id]) {
+
+    levelData[guildId][newMember.id] = {
+      xp: 0,
+      name: displayName,
+      messages: 0,
+      achievements: []
+    };
+
+  } else {
+
+    levelData[guildId][newMember.id].name =
+      displayName;
+
+  }
+
+  await saveLevelsToSheet();
+
+});
+
+  await saveLevelsToSheet();
 });
 
 client.on("messageCreate", async message => {
