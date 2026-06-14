@@ -72,13 +72,23 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:I"
+    range: "工作表1!A2:J"
   });
 
   const rows = res.data.values || [];
 
   rows.forEach(row => {
-    const [guildId, userId, name, xp, level, messages, achievements, voiceMinutes] = row;
+    const [
+  guildId,
+  userId,
+  name,
+  xp,
+  level,
+  messages,
+  achievements,
+  voiceMinutes,
+  voiceStart
+] = row;
 
     if (guildId && userId) {
       if (!levelData[guildId]) {
@@ -92,7 +102,8 @@ async function loadLevelsFromSheet() {
   achievements: achievements
   ? achievements.split(",").filter(a => a.startsWith("talk"))
   : [],
-voiceMinutes: Number(voiceMinutes) || 0
+voiceMinutes: Number(voiceMinutes) || 0,
+voiceStart: voiceStart || null
 };;
     }
   });
@@ -114,6 +125,7 @@ async function saveLevelsToSheet() {
   data.messages || 0,
  (data.achievements || []).join(","),
 data.voiceMinutes || 0,
+data.voiceStart || "",
 new Date().toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei"
   })
@@ -123,12 +135,12 @@ new Date().toLocaleString("zh-TW", {
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:I"
+    range: "工作表1!A2:J"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:I",
+    range: "工作表1!A2:J",
     valueInputOption: "RAW",
     requestBody: {
       values
@@ -478,7 +490,8 @@ client.on("guildMemberAdd", member => {
   name: displayName,
   messages: 0,
   achievements: [],
-  voiceMinutes: 0
+  voiceMinutes: 0,
+voiceStart: null
 };
   } else {
     levelData[guildId][member.id].name = displayName;
@@ -507,7 +520,8 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   name: displayName,
   messages: 0,
   achievements: [],
-  voiceMinutes: 0
+  voiceMinutes: 0,
+voiceStart: null
 };
   } else {
     levelData[guildId][newMember.id].name = displayName;
@@ -549,7 +563,8 @@ if (!levelData[guildId][userId]) {
   name: displayName,
   messages: 0,
   achievements: [],
-  voiceMinutes: 0
+  voiceMinutes: 0,
+voiceStart: null
 };
 }
 
@@ -826,78 +841,79 @@ const LEAVE_CHANNEL_ID = "1497601369518116874";       // 管理群
 const LEVEL_CHANNEL_ID = "1515361647722496182";       // 公會紀錄
 const ACHIEVEMENT_CHANNEL_ID = "1515361647722496182"; // 公會紀錄
 client.on("voiceStateUpdate", async (oldState, newState) => {
-
   const member = newState.member || oldState.member;
 
   if (!member || member.user.bot) return;
 
   const guildId = member.guild.id;
   const userId = member.id;
+  const key = `${guildId}-${userId}`;
+
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
+  }
+
+  if (!levelData[guildId][userId]) {
+    levelData[guildId][userId] = {
+      xp: 0,
+      name: member.displayName,
+      messages: 0,
+      achievements: [],
+      voiceMinutes: 0,
+      voiceStart: null
+    };
+  }
+
+  const userData = levelData[guildId][userId];
 
   // 進入語音
   if (!oldState.channel && newState.channel) {
+    const now = Date.now();
 
-    voiceSessions.set(
-      `${guildId}-${userId}`,
-      Date.now()
-    );
-
-    return;
-  }
-
-  // 離開語音
-  if (oldState.channel && !newState.channel) {
-
-    const key = `${guildId}-${userId}`;
-
-    const startTime = voiceSessions.get(key);
-
-    if (!startTime) return;
-
-    const minutes = Math.floor(
-      (Date.now() - startTime) / 60000
-    );
-
-    voiceSessions.delete(key);
-
-    if (!levelData[guildId]) {
-      levelData[guildId] = {};
-    }
-
-    if (!levelData[guildId][userId]) {
-      levelData[guildId][userId] = {
-        xp: 0,
-        name: member.displayName,
-        messages: 0,
-        achievements: [],
-        voiceMinutes: 0
-      };
-    }
-
-    levelData[guildId][userId].voiceMinutes += minutes;
-    await checkAchievements(
-  {
-    guild: member.guild
-  },
-  levelData[guildId][userId],
-  {
-    singleVoiceMinutes: minutes
-  }
-);
-
-    console.log(
-      `🎧 ${member.displayName} 語音 ${minutes} 分鐘`
-    );
+    userData.voiceStart = String(now);
+    voiceSessions.set(key, now);
 
     saveLevelData();
 
     try {
       await saveLevelsToSheet();
     } catch (err) {
-      console.error(err);
+      console.error("語音開始儲存失敗：", err);
     }
+
+    return;
   }
 
+  // 離開語音
+  if (oldState.channel && !newState.channel) {
+    const startTime =
+      Number(userData.voiceStart) ||
+      voiceSessions.get(key);
+
+    if (!startTime) return;
+
+    const minutes = Math.floor((Date.now() - startTime) / 60000);
+
+    voiceSessions.delete(key);
+    userData.voiceStart = null;
+    userData.voiceMinutes = (userData.voiceMinutes || 0) + minutes;
+
+    await checkAchievements(
+      { guild: member.guild },
+      userData,
+      { singleVoiceMinutes: minutes }
+    );
+
+    console.log(`🎧 ${member.displayName} 語音 ${minutes} 分鐘`);
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("語音結算儲存失敗：", err);
+    }
+  }
 });
 client.on("guildMemberRemove", async member => {
   try {
