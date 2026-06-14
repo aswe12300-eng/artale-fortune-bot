@@ -828,6 +828,82 @@ if (levelChannel) {
     ]
   });
 }
+  if (message.content.trim() === "-個人資料") {
+
+  const level = getLevel(userData.xp || 0);
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#2ECC71")
+        .setTitle(`🍁 ${displayName} 個人資料`)
+        .addFields(
+          {
+            name: "🏅 等級",
+            value: `Lv.${level}`,
+            inline: true
+          },
+          {
+            name: "🎖 稱號",
+            value: getTitle(level),
+            inline: true
+          },
+          {
+            name: "🔥 活躍值",
+            value: `${userData.xp || 0}`,
+            inline: true
+          },
+          {
+            name: "💬 發言次數",
+            value: `${userData.messages || 0}`,
+            inline: true
+          },
+          {
+            name: "🎧 語音時數",
+            value: `${((userData.voiceMinutes || 0) / 60).toFixed(1)} 小時`,
+            inline: true
+          },
+          {
+            name: "👑 活躍王次數",
+            value: `${userData.kingCount || 0} 次`,
+            inline: true
+          },
+          {
+            name: "🏆 已解鎖成就",
+            value: `${userData.achievements?.length || 0} 個`,
+            inline: true
+          },
+          {
+            name: "🌙 夜貓發言",
+            value: `${userData.nightMessages || 0}`,
+            inline: true
+          },
+          {
+            name: "☀️ 早鳥發言",
+            value: `${userData.morningMessages || 0}`,
+            inline: true
+          },
+          {
+            name: "🍀 天選之人",
+            value: `${userData.luckyCount || 0} 次`,
+            inline: true
+          },
+          {
+            name: "💀 大凶",
+            value: `${userData.badLuckCount || 0} 次`,
+            inline: true
+          }
+        )
+        .setThumbnail(
+          message.author.displayAvatarURL({
+            extension: "png",
+            size: 256
+          })
+        )
+        .setTimestamp()
+    ]
+  });
+}
   if (message.content.trim() === "-檢查頻道") {
 
   const channels = message.guild.channels.cache
@@ -885,7 +961,23 @@ if (levelChannel) {
       return `❓ 未知成就`;
     }
 
-    return `⬜ ${a.name}`;
+    if (a.id === "talk50") {
+  return `⬜ ${a.name} (${userData.messages || 0}/50)`;
+}
+
+if (a.id === "talk200") {
+  return `⬜ ${a.name} (${userData.messages || 0}/200)`;
+}
+
+if (a.id === "talk500") {
+  return `⬜ ${a.name} (${userData.messages || 0}/500)`;
+}
+
+if (a.id === "voice50") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/3000 分鐘)`;
+}
+
+return `⬜ ${a.name}`;
   })
     .join("\n");
 
