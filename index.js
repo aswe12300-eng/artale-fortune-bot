@@ -618,6 +618,47 @@ if (levelChannel) {
 
   return message.reply(result);
 }
+  if (message.content.trim() === "-成就") {
+
+  const achievements = userData.achievements || [];
+
+  const achievementList = [
+    {
+      id: "talk50",
+      name: "💬 話癆 I"
+    },
+    {
+      id: "talk200",
+      name: "💬 話癆 II"
+    },
+    {
+      id: "talk500",
+      name: "💬 話癆 III"
+    }
+  ];
+
+  const text = achievementList
+    .map(a =>
+      achievements.includes(a.id)
+        ? `✅ ${a.name}`
+        : `⬜ ${a.name}`
+    )
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle(`🏆 ${displayName} 的成就`)
+        .setDescription(text)
+        .addFields({
+          name: "📊 進度",
+          value: `${achievements.length} / ${achievementList.length} 已解鎖`
+        })
+        .setTimestamp()
+    ]
+  });
+}
   if (message.content.trim() === "-排行榜") {
   const guildRanking = levelData[guildId] || {};
 
