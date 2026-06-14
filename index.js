@@ -402,13 +402,6 @@ async function checkAchievements(message, userData, extra = {}) {
   reward: 50,
   hidden: true,
   type: "ghost"
-},
-     {
-  id: "activeKing",
-  name: "👑 活躍之王",
-  reward: 200,
-  type: "activeKing",
-  hidden: true
 }
   ];
 
@@ -434,10 +427,7 @@ if (achievement.type === "level") {
     (userData.voiceMinutes || 0) >= 1200 &&
     (userData.messages || 0) <= 20;
 }
-  if (achievement.type === "activeKing") {
-  const guildData = levelData[message.guild.id] || {};
-  const topUserId = Object.entries(guildData)
-    .sort((a, b) => b[1].xp - a[1].xp)[0]?.[0];
+
 
   completed = topUserId === message.author.id;
 }  
@@ -732,8 +722,7 @@ if (levelChannel) {
 
   { id: "elder", name: "🍁 公會元老", hidden: true },
   { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true },
-    { id: "ghost", name: "👻 幽靈成員", hidden: true },
-    { id: "activeKing", name: "👑 活躍之王", hidden: true }
+    { id: "ghost", name: "👻 幽靈成員", hidden: true }
 ];
 
   const text = achievementList
