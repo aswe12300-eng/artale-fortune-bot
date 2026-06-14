@@ -440,6 +440,18 @@ cron.schedule("59 23 * * *",, async () => {
     if (ranking.length === 0) continue;
 
     const [winnerId, winnerData] = ranking[0];
+    const top3 = ranking.slice(0, 3);
+
+const top3Text = top3
+  .map(([id, data], index) => {
+    const medal =
+      index === 0 ? "🥇" :
+      index === 1 ? "🥈" :
+      "🥉";
+
+    return `${medal} **${data.name}** ｜ ${data.dailyXp} XP`;
+  })
+  .join("\n");
 
     const isFirstKing = (winnerData.kingCount || 0) === 0;
     const reward = isFirstKing ? 200 : 50;
@@ -453,17 +465,23 @@ cron.schedule("59 23 * * *",, async () => {
       await channel.send({
         embeds: [
           new EmbedBuilder()
-            .setColor("#FFD700")
-            .setTitle("👑 今日活躍之王")
-            .setDescription(
-              `恭喜 **${winnerData.name}** 成為今日活躍王！\n\n` +
-              `🔥 今日活躍值：**${winnerData.dailyXp} XP**\n` +
-              `🎁 獲得獎勵：**+${reward} XP**\n\n` +
-              (isFirstKing
-                ? "🌟 首次登上王座，獲得首登獎勵！"
-                : `👑 累積獲得活躍王：${winnerData.kingCount} 次`)
-            )
-            .setTimestamp()
+           .setColor("#FFD700")
+.setTitle("👑 EtheReal 每日活躍之王")
+.setDescription(
+`${top3Text}\n\n` +
+`🏆 恭喜 **${winnerData.name}** 榮登今日活躍之王！\n\n` +
+`🎁 今日獎勵：+${reward} XP\n` +
+`${isFirstKing
+    ? "🌟 首次登上王座，獲得首登獎勵！"
+    : `👑 累積獲得活躍王：${winnerData.kingCount} 次`
+  }\n\n` +
+`🍁 感謝各位今天為 EtheReal 帶來滿滿活力！`
+)
+.setFooter({
+text: "每日 23:59 自動結算"
+})
+.setTimestamp()
+
         ]
       });
     }
