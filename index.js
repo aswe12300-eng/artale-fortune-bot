@@ -670,6 +670,31 @@ if (levelChannel) {
         .setTimestamp()
     ]
   });
+    if (message.content.trim() === "-語音排行") {
+  const guildRanking = levelData[guildId] || {};
+
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => (b[1].voiceMinutes || 0) - (a[1].voiceMinutes || 0))
+    .slice(0, 10);
+
+  const text = ranking
+    .map(([id, data], index) => {
+      const hours = ((data.voiceMinutes || 0) / 60).toFixed(1);
+      return `**${index + 1}. ${data.name}**｜🎧 ${hours} 小時`;
+    })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#3498DB")
+        .setTitle("🎧 本伺服器語音排行榜")
+        .setDescription(text || "目前還沒有語音資料")
+        .setFooter({ text: "依照本伺服器語音累積時數統計" })
+        .setTimestamp()
+    ]
+  });
+}
 }
   if (message.content.trim() === "-排行榜") {
   const guildRanking = levelData[guildId] || {};
