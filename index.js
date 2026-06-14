@@ -827,6 +827,7 @@ if (message.content.trim() === "-語音排行") {
         .setTimestamp()
     ]
   });
+  }
   if (message.content.trim() === "-今日排行") {
   const guildRanking = levelData[guildId] || {};
 
