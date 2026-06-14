@@ -974,7 +974,15 @@ if (a.id === "talk500") {
 }
 
 if (a.id === "voice50") {
-  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/3000 分鐘)`;
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/3000)`;
+}
+
+if (a.id === "voice200") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/12000)`;
+}
+
+if (a.id === "voice500") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/30000)`;
 }
 
 return `⬜ ${a.name}`;
