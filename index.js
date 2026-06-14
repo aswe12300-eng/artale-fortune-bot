@@ -103,8 +103,8 @@ async function loadLevelsFromSheet() {
   xp: Number(xp) || 0,
   messages: Number(messages) || 0,
   achievements: achievements
-    ? achievements.split(",").filter(a => a.startsWith("talk"))
-    : [],
+  ? achievements.split(",")
+  : [],
   voiceMinutes: Number(voiceMinutes) || 0,
   voiceStart: voiceStart || null,
   voiceXpToday: Number(voiceXpToday) || 0,
@@ -929,9 +929,6 @@ const voiceXp = Math.min(rawVoiceXp, remainingVoiceXp);
 userData.xp += voiceXp;
 userData.voiceXpToday = (userData.voiceXpToday || 0) + voiceXp;
 
-// 🎧 語音XP
-const voiceXp = Math.floor(minutes / 30);
-userData.xp += voiceXp;
 
 await checkAchievements(
   {
