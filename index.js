@@ -1030,7 +1030,8 @@ if (message.content.trim() === "-排行榜") {
     userData.badLuckCount =
       (userData.badLuckCount || 0) + 1;
   }
-
+    
+  saveLevelData();
   await saveLevelsToSheet();
 
   const embed = createFortuneEmbed(
@@ -1056,8 +1057,31 @@ client.on("interactionCreate", async interaction => {
   const guildId = interaction.guild.id;
   const userId = interaction.user.id;
 
-  const userData =
-    levelData[guildId]?.[userId];
+  if (!levelData[guildId]) {
+  levelData[guildId] = {};
+}
+
+if (!levelData[guildId][userId]) {
+  levelData[guildId][userId] = {
+    xp: 0,
+    name: interaction.member?.displayName || interaction.user.username,
+    messages: 0,
+    achievements: [],
+    voiceMinutes: 0,
+    voiceStart: null,
+    voiceXpToday: 0,
+    voiceXpDate: null,
+    dailyXp: 0,
+    dailyXpDate: null,
+    kingCount: 0,
+    nightMessages: 0,
+    morningMessages: 0,
+    luckyCount: 0,
+    badLuckCount: 0
+  };
+}
+
+const userData = levelData[guildId][userId];
 
   const fortune = pick(fortunes);
 
@@ -1076,7 +1100,7 @@ client.on("interactionCreate", async interaction => {
     interaction.member,
     fortune
   );
-
+  saveLevelData();
   await saveLevelsToSheet();
 
   await interaction.reply({
