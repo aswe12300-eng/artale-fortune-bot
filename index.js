@@ -425,6 +425,63 @@ client.once("ready", async () => {
   await loadLevelsFromSheet();
   console.log(`✅ ${client.user.tag} 已上線`);
 });
+// ===== 每日活躍王結算 =====
+cron.schedule("59 23 * * *", async () => {
+  console.log("👑 開始每日活躍王結算");
+
+  for (const [guildId, users] of Object.entries(levelData)) {
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) continue;
+
+    const ranking = Object.entries(users)
+      .filter(([id, data]) => (data.dailyXp || 0) > 0)
+      .sort((a, b) => (b[1].dailyXp || 0) - (a[1].dailyXp || 0));
+
+    if (ranking.length === 0) continue;
+
+    const [winnerId, winnerData] = ranking[0];
+
+    const isFirstKing = (winnerData.kingCount || 0) === 0;
+    const reward = isFirstKing ? 200 : 50;
+
+    winnerData.xp = (winnerData.xp || 0) + reward;
+    winnerData.kingCount = (winnerData.kingCount || 0) + 1;
+
+    const channel = guild.channels.cache.get(LEVEL_CHANNEL_ID);
+
+    if (channel) {
+      await channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor("#FFD700")
+            .setTitle("👑 今日活躍之王")
+            .setDescription(
+              `恭喜 **${winnerData.name}** 成為今日活躍王！\n\n` +
+              `🔥 今日活躍值：**${winnerData.dailyXp} XP**\n` +
+              `🎁 獲得獎勵：**+${reward} XP**\n\n` +
+              (isFirstKing
+                ? "🌟 首次登上王座，獲得首登獎勵！"
+                : `👑 累積獲得活躍王：${winnerData.kingCount} 次`)
+            )
+            .setTimestamp()
+        ]
+      });
+    }
+
+    for (const data of Object.values(users)) {
+      data.dailyXp = 0;
+      data.dailyXpDate = null;
+    }
+  }
+
+  try {
+    await saveLevelsToSheet();
+  } catch (err) {
+    console.error("每日活躍王結算儲存失敗：", err);
+  }
+}, {
+  timezone: "Asia/Taipei"
+});
 
 // =====================
 // 新成員加入時紀錄暱稱
