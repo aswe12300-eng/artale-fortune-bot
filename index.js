@@ -261,7 +261,7 @@ const oracleList = [
   "歐洲人請自重，非洲人請明日再戰。"
 ];
 
-function createFortuneEmbed(user, member) {
+function createFortuneEmbed(user, member, fortune) {
   const drop = random(1, 100);
   const enhance = random(1, 100);
   const boss = random(1, 100);
@@ -269,7 +269,7 @@ function createFortuneEmbed(user, member) {
   const channel = random(1, 2500);
   const luckyScore = random(1, 100);
 
-  const fortune = pick(fortunes);
+ 
   const advice = pick(adviceList);
   const poem = pick(poemList);
   const oracle = pick(oracleList);
@@ -1018,32 +1018,79 @@ if (message.content.trim() === "-排行榜") {
 }
 
   if (message.content.trim() === "-占卜") {
-    const embed = createFortuneEmbed(
-      message.author,
-      message.member
-    );
 
-    await message.reply({
-      embeds: [embed],
-      components: [createButtonRow()]
-    });
+  const fortune = pick(fortunes);
+
+  if (fortune === "🌈 天選之人") {
+    userData.luckyCount =
+      (userData.luckyCount || 0) + 1;
   }
+
+  if (fortune === "💀 大凶") {
+    userData.badLuckCount =
+      (userData.badLuckCount || 0) + 1;
+  }
+
+  await saveLevelsToSheet();
+
+  const embed = createFortuneEmbed(
+    message.author,
+    message.member,
+    fortune
+  );
+
+  await message.reply({
+    embeds: [embed],
+    components: [createButtonRow()]
+  });
+
+  await checkAchievements(message, userData);
+}
 });
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId === "draw_fortune") {
-    const embed = createFortuneEmbed(
-      interaction.user,
-      interaction.member
-    );
 
-    await interaction.reply({
-      embeds: [embed],
-      components: [createButtonRow()]
-    });
+  const guildId = interaction.guild.id;
+  const userId = interaction.user.id;
+
+  const userData =
+    levelData[guildId]?.[userId];
+
+  const fortune = pick(fortunes);
+
+  if (fortune === "🌈 天選之人") {
+    userData.luckyCount =
+      (userData.luckyCount || 0) + 1;
   }
+
+  if (fortune === "💀 大凶") {
+    userData.badLuckCount =
+      (userData.badLuckCount || 0) + 1;
+  }
+
+  const embed = createFortuneEmbed(
+    interaction.user,
+    interaction.member,
+    fortune
+  );
+
+  await saveLevelsToSheet();
+
+  await interaction.reply({
+    embeds: [embed],
+    components: [createButtonRow()]
+  });
+
+  await checkAchievements(
+    {
+      guild: interaction.guild
+    },
+    userData
+  );
+}
 });
 // =====================
 // 成員離開通知
