@@ -337,9 +337,7 @@ async function checkAchievements(message, userData) {
 
   const achievements = userData.achievements || [];
 
-  const achievementList = [
-    const achievementList = [
-
+   const achievementList = [
   {
     id: "talk50",
     name: "💬 話癆 I",
@@ -347,7 +345,6 @@ async function checkAchievements(message, userData) {
     reward: 10,
     type: "messages"
   },
-
   {
     id: "talk200",
     name: "💬 話癆 II",
@@ -355,7 +352,6 @@ async function checkAchievements(message, userData) {
     reward: 30,
     type: "messages"
   },
-
   {
     id: "talk500",
     name: "💬 話癆 III",
@@ -364,6 +360,7 @@ async function checkAchievements(message, userData) {
     type: "messages"
   },
 
+  // 🍁 隱藏成就
   {
     id: "elder",
     name: "🍁 公會元老",
@@ -372,7 +369,6 @@ async function checkAchievements(message, userData) {
     type: "level",
     hidden: true
   }
-
 ];
   ];
 
