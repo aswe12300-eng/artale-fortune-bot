@@ -117,7 +117,7 @@ kingCount
   dailyXp: Number(dailyXp) || 0,
   dailyXpDate: dailyXpDate || null,
   kingCount: Number(kingCount) || 0
-};;
+};
     }
   });
 
@@ -826,7 +826,9 @@ if (message.content.trim() === "-語音排行") {
         .setFooter({ text: "依照本伺服器語音累積時數統計" })
         .setTimestamp()
     ]
-  });
+    });
+  }
+  
   if (message.content.trim() === "-今日排行") {
   const guildRanking = levelData[guildId] || {};
 
