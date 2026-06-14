@@ -827,6 +827,39 @@ if (message.content.trim() === "-語音排行") {
         .setTimestamp()
     ]
   });
+  if (message.content.trim() === "-今日排行") {
+  const guildRanking = levelData[guildId] || {};
+
+  const ranking = Object.entries(guildRanking)
+    .filter(([id, data]) => (data.dailyXp || 0) > 0)
+    .sort((a, b) => (b[1].dailyXp || 0) - (a[1].dailyXp || 0))
+    .slice(0, 10);
+
+  const text = ranking
+    .map(([id, data], index) => {
+      const medal =
+        index === 0 ? "🥇" :
+        index === 1 ? "🥈" :
+        index === 2 ? "🥉" :
+        `${index + 1}.`;
+
+      return `${medal} **${data.name}**｜🔥 ${data.dailyXp || 0} XP`;
+    })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FF9900")
+        .setTitle("🔥 本日活躍排行榜")
+        .setDescription(text || "今天目前還沒有活躍資料")
+        .setFooter({
+          text: "每日 00:00 結算活躍王"
+        })
+        .setTimestamp()
+    ]
+  });
+}
 }
 if (message.content.trim() === "-我的排名") {
   const guildRanking = levelData[guildId] || {};
@@ -872,6 +905,7 @@ if (message.content.trim() === "-我的排名") {
         .setTimestamp()
     ]
   });
+  
 }
 if (message.content.trim() === "-排行榜") {
   const guildRanking = levelData[guildId] || {};
