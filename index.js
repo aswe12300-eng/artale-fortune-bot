@@ -905,15 +905,19 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
   if (!levelData[guildId][userId]) {
     levelData[guildId][userId] = {
-      xp: 0,
-      name: member.displayName,
-      messages: 0,
-      achievements: [],
-      voiceMinutes: 0,
-      voiceStart: null,
-      voiceXpToday: 0,
-  voiceXpDate: null
-    };
+  xp: 0,
+  name: member.displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0,
+  voiceStart: null,
+  voiceXpToday: 0,
+  voiceXpDate: null,
+
+  dailyXp: 0,
+  dailyXpDate: null,
+  kingCount: 0
+};
   }
 
   const userData = levelData[guildId][userId];
