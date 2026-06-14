@@ -338,30 +338,60 @@ async function checkAchievements(message, userData) {
   const achievements = userData.achievements || [];
 
   const achievementList = [
-    {
-  id: "talk50",
-  name: "💬 話癆 I",
-  requirement: 50,
-  reward: 10
-},
-{
-  id: "talk200",
-  name: "💬 話癆 II",
-  requirement: 200,
-  reward: 30
-},
-{
-  id: "talk500",
-  name: "💬 話癆 III",
-  requirement: 500,
-  reward: 100
-}
+    const achievementList = [
+
+  {
+    id: "talk50",
+    name: "💬 話癆 I",
+    requirement: 50,
+    reward: 10,
+    type: "messages"
+  },
+
+  {
+    id: "talk200",
+    name: "💬 話癆 II",
+    requirement: 200,
+    reward: 30,
+    type: "messages"
+  },
+
+  {
+    id: "talk500",
+    name: "💬 話癆 III",
+    requirement: 500,
+    reward: 100,
+    type: "messages"
+  },
+
+  {
+    id: "elder",
+    name: "🍁 公會元老",
+    requirement: 20,
+    reward: 50,
+    type: "level",
+    hidden: true
+  }
+
+];
   ];
 
   for (const achievement of achievementList) {
 
-    if (
-  userData.messages >= achievement.requirement &&
+    let completed = false;
+
+if (achievement.type === "messages") {
+  completed =
+    userData.messages >= achievement.requirement;
+}
+
+if (achievement.type === "level") {
+  completed =
+    getLevel(userData.xp) >= achievement.requirement;
+}
+
+if (
+  completed &&
   !achievements.includes(achievement.id)
 ) {
 
