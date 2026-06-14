@@ -396,7 +396,11 @@ async function checkAchievements(message, userData, extra = {}) {
     { id: "nightOwl", name: "🌙 夜貓子", requirement: 100, reward: 100, type: "nightMessages", hidden: true },
 { id: "earlyBird", name: "☀️ 早鳥", requirement: 50, reward: 80, type: "morningMessages", hidden: true },
 { id: "luckyGod", name: "🍀 歐皇降臨", requirement: 3, reward: 100, type: "luckyCount", hidden: true },
-{ id: "badLuckWarrior", name: "💀 非洲戰神", requirement: 10, reward: 100, type: "badLuckCount", hidden: true }
+{ id: "badLuckWarrior", name: "💀 非洲戰神", requirement: 10, reward: 100, type: "badLuckCount", hidden: true },
+    { id: "king1", name: "👑 初登王座", requirement: 1, reward: 100, type: "kingCount" },
+{ id: "king5", name: "🏆 常勝將軍", requirement: 5, reward: 200, type: "kingCount" },
+{ id: "king20", name: "🌟 活躍之神", requirement: 20, reward: 500, type: "kingCount", hidden: true }
+    
     
   ];
 
@@ -438,6 +442,10 @@ if (achievement.type === "luckyCount") {
 
 if (achievement.type === "badLuckCount") {
   completed = (userData.badLuckCount || 0) >= achievement.requirement;
+}
+    if (achievement.type === "kingCount") {
+  completed =
+    (userData.kingCount || 0) >= achievement.requirement;
 }
 
     if (completed && !achievements.includes(achievement.id)) {
@@ -501,6 +509,12 @@ const top3Text = top3
 
     winnerData.xp = (winnerData.xp || 0) + reward;
     winnerData.kingCount = (winnerData.kingCount || 0) + 1;
+   await checkAchievements(
+  {
+    guild
+  },
+  winnerData
+);
 
     const channel = guild.channels.cache.get(LEVEL_CHANNEL_ID);
 
@@ -853,7 +867,10 @@ if (levelChannel) {
     { id: "nightOwl", name: "🌙 夜貓子", hidden: true },
 { id: "earlyBird", name: "☀️ 早鳥", hidden: true },
 { id: "luckyGod", name: "🍀 歐皇降臨", hidden: true },
-{ id: "badLuckWarrior", name: "💀 非洲戰神", hidden: true }
+{ id: "badLuckWarrior", name: "💀 非洲戰神", hidden: true },
+    { id: "king1", name: "👑 初登王座" },
+{ id: "king5", name: "🏆 常勝將軍" },
+{ id: "king20", name: "🌟 活躍之神", hidden: true }
     
 ];
 
