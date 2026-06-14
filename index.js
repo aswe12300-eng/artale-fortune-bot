@@ -373,7 +373,12 @@ async function checkAchievements(message, userData, extra = {}) {
 
     { id: "elder", name: "🍁 公會元老", requirement: 20, reward: 50, type: "level", hidden: true },
     { id: "voiceCamp", name: "🏕️ 語音露營", requirement: 480, reward: 80, type: "singleVoice", hidden: true },
-    { id: "ghost", name: "👻 幽靈成員", reward: 50, type: "ghost", hidden: true }
+    { id: "ghost", name: "👻 幽靈成員", reward: 50, type: "ghost", hidden: true },
+{ id: "voice50", name: "🎧 語音常客 I", requirement: 3000, reward: 50, type: "voiceMinutes" },
+{ id: "voice200", name: "🎧 語音常客 II", requirement: 12000, reward: 100, type: "voiceMinutes" },
+{ id: "voice500", name: "🎧 語音常客 III", requirement: 30000, reward: 200, type: "voiceMinutes" },
+{ id: "voice1000", name: "📻 公會電台", requirement: 60000, reward: 500, type: "voiceMinutes", hidden: true }
+    
   ];
 
   for (const achievement of achievementList) {
@@ -396,6 +401,10 @@ async function checkAchievements(message, userData, extra = {}) {
         (userData.voiceMinutes || 0) >= 1200 &&
         (userData.messages || 0) <= 20;
     }
+    if (achievement.type === "voiceMinutes") {
+  completed =
+    (userData.voiceMinutes || 0) >= achievement.requirement;
+}
 
     if (completed && !achievements.includes(achievement.id)) {
       achievements.push(achievement.id);
@@ -770,7 +779,12 @@ if (levelChannel) {
 
   { id: "elder", name: "🍁 公會元老", hidden: true },
   { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true },
-    { id: "ghost", name: "👻 幽靈成員", hidden: true }
+    { id: "ghost", name: "👻 幽靈成員", hidden: true },
+{ id: "voice50", name: "🎧 語音常客 I" },
+{ id: "voice200", name: "🎧 語音常客 II" },
+{ id: "voice500", name: "🎧 語音常客 III" },
+{ id: "voice1000", name: "📻 公會電台", hidden: true }
+    
 ];
 
   const text = achievementList
