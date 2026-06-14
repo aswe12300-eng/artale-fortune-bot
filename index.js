@@ -362,20 +362,27 @@ async function checkAchievements(message, userData, extra = {}) {
 
   // 🍁 隱藏成就
   {
-    id: "elder",
-    name: "🍁 公會元老",
-    requirement: 20,
-    reward: 50,
-    type: "level",
-    hidden: true
-  },
-     {
+  id: "elder",
+  name: "🍁 公會元老",
+  requirement: 20,
+  reward: 50,
+  type: "level",
+  hidden: true
+},
+{
   id: "voiceCamp",
   name: "🏕️ 語音露營",
   requirement: 480,
   reward: 80,
   type: "singleVoice",
   hidden: true
+},
+{
+  id: "ghost",
+  name: "👻 幽靈成員",
+  reward: 50,
+  hidden: true,
+  type: "ghost"
 }
   ];
 
@@ -395,6 +402,11 @@ if (achievement.type === "level") {
     if (achievement.type === "singleVoice") {
   completed =
     (extra.singleVoiceMinutes || 0) >= achievement.requirement;
+}
+    if (achievement.type === "ghost") {
+  completed =
+    (userData.voiceMinutes || 0) >= 1200 &&
+    (userData.messages || 0) <= 20;
 }
 
 if (
