@@ -460,7 +460,7 @@ if (
   }
 
   userData.achievements = achievements;
-}
+
 
 client.once("ready", async () => {
   await loadLevelsFromSheet();
