@@ -348,7 +348,6 @@ function createButtonRow() {
 // ===== 成就系統 =====
 
 async function checkAchievements(message, userData, extra = {}) {
-
   const achievementChannel =
     message.guild.channels.cache.get(ACHIEVEMENT_CHANNEL_ID);
 
@@ -356,101 +355,49 @@ async function checkAchievements(message, userData, extra = {}) {
 
   const achievements = userData.achievements || [];
 
-   const achievementList = [
-  {
-    id: "talk50",
-    name: "💬 話癆 I",
-    requirement: 50,
-    reward: 10,
-    type: "messages"
-  },
-  {
-    id: "talk200",
-    name: "💬 話癆 II",
-    requirement: 200,
-    reward: 30,
-    type: "messages"
-  },
-  {
-    id: "talk500",
-    name: "💬 話癆 III",
-    requirement: 500,
-    reward: 100,
-    type: "messages"
-  },
+  const achievementList = [
+    { id: "talk50", name: "💬 話癆 I", requirement: 50, reward: 10, type: "messages" },
+    { id: "talk200", name: "💬 話癆 II", requirement: 200, reward: 30, type: "messages" },
+    { id: "talk500", name: "💬 話癆 III", requirement: 500, reward: 100, type: "messages" },
 
-  // 🍁 隱藏成就
-  {
-  id: "elder",
-  name: "🍁 公會元老",
-  requirement: 20,
-  reward: 50,
-  type: "level",
-  hidden: true
-},
-{
-  id: "voiceCamp",
-  name: "🏕️ 語音露營",
-  requirement: 480,
-  reward: 80,
-  type: "singleVoice",
-  hidden: true
-},
-{
-  id: "ghost",
-  name: "👻 幽靈成員",
-  reward: 50,
-  hidden: true,
-  type: "ghost"
-}
+    { id: "elder", name: "🍁 公會元老", requirement: 20, reward: 50, type: "level", hidden: true },
+    { id: "voiceCamp", name: "🏕️ 語音露營", requirement: 480, reward: 80, type: "singleVoice", hidden: true },
+    { id: "ghost", name: "👻 幽靈成員", reward: 50, type: "ghost", hidden: true }
   ];
 
   for (const achievement of achievementList) {
-
     let completed = false;
 
-if (achievement.type === "messages") {
-  completed =
-    userData.messages >= achievement.requirement;
-}
+    if (achievement.type === "messages") {
+      completed = userData.messages >= achievement.requirement;
+    }
 
-if (achievement.type === "level") {
-  completed =
-    getLevel(userData.xp) >= achievement.requirement;
-}
+    if (achievement.type === "level") {
+      completed = getLevel(userData.xp) >= achievement.requirement;
+    }
+
     if (achievement.type === "singleVoice") {
-  completed =
-    (extra.singleVoiceMinutes || 0) >= achievement.requirement;
-}
+      completed = (extra.singleVoiceMinutes || 0) >= achievement.requirement;
+    }
+
     if (achievement.type === "ghost") {
-  completed =
-    (userData.voiceMinutes || 0) >= 1200 &&
-    (userData.messages || 0) <= 20;
-}
+      completed =
+        (userData.voiceMinutes || 0) >= 1200 &&
+        (userData.messages || 0) <= 20;
+    }
 
+    if (completed && !achievements.includes(achievement.id)) {
+      achievements.push(achievement.id);
+      userData.xp += achievement.reward;
 
-  completed = topUserId === message.author.id;
-}  
-
-if (
-  completed &&
-  !achievements.includes(achievement.id)
-) {
-
-  achievements.push(achievement.id);
-
-  // 🎁 發放成就獎勵 XP
-  userData.xp += achievement.reward;
-
-  const embed = new EmbedBuilder()
+      const embed = new EmbedBuilder()
         .setColor("#FFD700")
         .setTitle("🏆 成就解鎖")
         .setDescription(
-  `🎉 **${userData.name}** 解鎖成就！\n\n` +
-  `${achievement.name}\n` +
-  `累積發言 ${achievement.requirement} 次\n\n` +
-  `🎁 獲得獎勵：+${achievement.reward} XP`
-)
+          `🎉 **${userData.name}** 解鎖成就！\n\n` +
+          `${achievement.name}\n\n` +
+          `🎁 獲得獎勵：+${achievement.reward} XP`
+        )
         .setTimestamp();
 
       await achievementChannel.send({
@@ -460,6 +407,7 @@ if (
   }
 
   userData.achievements = achievements;
+}
 
 
 client.once("ready", async () => {
