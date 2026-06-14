@@ -377,7 +377,6 @@ async function checkAchievements(message, userData, extra = {}) {
   type: "singleVoice",
   hidden: true
 }
-];
   ];
 
   for (const achievement of achievementList) {
