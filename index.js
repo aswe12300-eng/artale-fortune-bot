@@ -672,17 +672,27 @@ if (levelChannel) {
   const achievements = userData.achievements || [];
 
   const achievementList = [
-    { id: "talk50", name: "💬 話癆 I" },
-    { id: "talk200", name: "💬 話癆 II" },
-    { id: "talk500", name: "💬 話癆 III" }
-  ];
+  { id: "talk50", name: "💬 話癆 I" },
+  { id: "talk200", name: "💬 話癆 II" },
+  { id: "talk500", name: "💬 話癆 III" },
+
+  { id: "elder", name: "🍁 公會元老", hidden: true },
+  { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true }
+];
 
   const text = achievementList
-    .map(a =>
-      achievements.includes(a.id)
-        ? `✅ ${a.name}`
-        : `⬜ ${a.name}`
-    )
+  .map(a => {
+
+    if (achievements.includes(a.id)) {
+      return `✅ ${a.name}`;
+    }
+
+    if (a.hidden) {
+      return `❓ 未知成就`;
+    }
+
+    return `⬜ ${a.name}`;
+  })
     .join("\n");
 
   return message.reply({
