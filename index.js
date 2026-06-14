@@ -72,7 +72,7 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:J"
+    range: "工作表1!A2:L"
   });
 
   const rows = res.data.values || [];
@@ -87,7 +87,10 @@ async function loadLevelsFromSheet() {
   messages,
   achievements,
   voiceMinutes,
-  voiceStart
+  voiceStart,
+  lastUpdate,
+  voiceXpToday,
+  voiceXpDate
 ] = row;
 
     if (guildId && userId) {
@@ -100,10 +103,12 @@ async function loadLevelsFromSheet() {
   xp: Number(xp) || 0,
   messages: Number(messages) || 0,
   achievements: achievements
-  ? achievements.split(",").filter(a => a.startsWith("talk"))
-  : [],
-voiceMinutes: Number(voiceMinutes) || 0,
-voiceStart: voiceStart || null
+    ? achievements.split(",").filter(a => a.startsWith("talk"))
+    : [],
+  voiceMinutes: Number(voiceMinutes) || 0,
+  voiceStart: voiceStart || null,
+  voiceXpToday: Number(voiceXpToday) || 0,
+  voiceXpDate: voiceXpDate || null
 };;
     }
   });
@@ -127,20 +132,22 @@ async function saveLevelsToSheet() {
 data.voiceMinutes || 0,
 data.voiceStart || "",
 new Date().toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei"
-  })
+  timeZone: "Asia/Taipei"
+}),
+data.voiceXpToday || 0,
+data.voiceXpDate || ""
 ]);
     });
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:J"
+    range: "工作表1!A2:L"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:J",
+    range: "工作表1!A2:L",
     valueInputOption: "RAW",
     requestBody: {
       values
