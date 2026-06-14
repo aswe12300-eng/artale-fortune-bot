@@ -73,7 +73,7 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:S"
+    range: "工作表1!A2:T"
   });
 
   const rows = res.data.values || [];
@@ -98,7 +98,8 @@ kingCount,
 nightMessages,
 morningMessages,
 luckyCount,
-badLuckCount
+badLuckCount,
+voiceXpMinutes
 ] = row;
 
     if (guildId && userId) {
@@ -124,7 +125,8 @@ badLuckCount
 nightMessages: Number(nightMessages) || 0,
 morningMessages: Number(morningMessages) || 0,
 luckyCount: Number(luckyCount) || 0,
-badLuckCount: Number(badLuckCount) || 0
+badLuckCount: Number(badLuckCount) || 0,
+voiceXpMinutes: Number(voiceXpMinutes) || 0
 };
     }
   });
@@ -158,19 +160,20 @@ data.kingCount || 0,
 data.nightMessages || 0,
 data.morningMessages || 0,
 data.luckyCount || 0,
-data.badLuckCount || 0
+data.badLuckCount || 0,
+data.voiceXpMinutes || 0
 ]);
     });
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:S"
+    range: "工作表1!A2:T"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:S",
+    range: "工作表1!A2:T",
     valueInputOption: "RAW",
     requestBody: {
       values
@@ -590,7 +593,8 @@ client.on("guildMemberAdd", member => {
   nightMessages: 0,
   morningMessages: 0,
   luckyCount: 0,
-  badLuckCount: 0
+  badLuckCount: 0,
+  voiceXpMinutes: 0
       
 };
   } else {
@@ -627,7 +631,8 @@ voiceStart: null,
       nightMessages: 0,
 morningMessages: 0,
 luckyCount: 0,
-badLuckCount: 0
+badLuckCount: 0,
+      voiceXpMinutes: 0
 };
   } else {
     levelData[guildId][newMember.id].name = displayName;
@@ -676,7 +681,8 @@ voiceStart: null,
     nightMessages: 0,
 morningMessages: 0,
 luckyCount: 0,
-badLuckCount: 0
+badLuckCount: 0,
+    voiceXpMinutes: 0
 };
 }
 
@@ -1194,7 +1200,8 @@ if (!levelData[guildId][userId]) {
     nightMessages: 0,
     morningMessages: 0,
     luckyCount: 0,
-    badLuckCount: 0
+    badLuckCount: 0,
+    voiceXpMinutes: 0
   };
 }
 
@@ -1271,7 +1278,8 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       nightMessages: 0,
 morningMessages: 0,
 luckyCount: 0,
-badLuckCount: 0
+badLuckCount: 0,
+      voiceXpMinutes: 0
 };
   }
 
@@ -1318,9 +1326,15 @@ if (userData.voiceXpDate !== today) {
   userData.voiceXpToday = 0;
 }
 
-const rawVoiceXp = Math.floor(minutes / 30);
+userData.voiceXpMinutes = (userData.voiceXpMinutes || 0) + minutes;
+
+const rawVoiceXp = Math.floor(userData.voiceXpMinutes / 30);
 const remainingVoiceXp = Math.max(0, 15 - (userData.voiceXpToday || 0));
 const voiceXp = Math.min(rawVoiceXp, remainingVoiceXp);
+
+if (voiceXp > 0) {
+  userData.voiceXpMinutes -= voiceXp * 30;
+}
 
 userData.xp += voiceXp;
     if (userData.dailyXpDate !== today) {
