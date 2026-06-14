@@ -721,7 +721,21 @@ client.on("interactionCreate", async interaction => {
 const LEAVE_CHANNEL_ID = "1497601369518116874";       // 管理群
 const LEVEL_CHANNEL_ID = "1515361647722496182";       // 公會紀錄
 const ACHIEVEMENT_CHANNEL_ID = "1515361647722496182"; // 公會紀錄
+client.on("voiceStateUpdate", (oldState, newState) => {
 
+  if (!oldState.channel && newState.channel) {
+    console.log(
+      `${newState.member.displayName} 進入語音`
+    );
+  }
+
+  if (oldState.channel && !newState.channel) {
+    console.log(
+      `${oldState.member.displayName} 離開語音`
+    );
+  }
+
+});
 client.on("guildMemberRemove", async member => {
   try {
     const channel = member.guild.channels.cache.get(LEAVE_CHANNEL_ID);
