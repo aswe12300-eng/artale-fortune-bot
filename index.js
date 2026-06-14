@@ -73,7 +73,7 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:O"
+    range: "工作表1!A2:S"
   });
 
   const rows = res.data.values || [];
@@ -94,7 +94,11 @@ voiceXpToday,
 voiceXpDate,
 dailyXp,
 dailyXpDate,
-kingCount
+kingCount,
+nightMessages,
+morningMessages,
+luckyCount,
+badLuckCount
 ] = row;
 
     if (guildId && userId) {
@@ -116,7 +120,11 @@ kingCount
 
   dailyXp: Number(dailyXp) || 0,
   dailyXpDate: dailyXpDate || null,
-  kingCount: Number(kingCount) || 0
+  kingCount: Number(kingCount) || 0,
+nightMessages: Number(nightMessages) || 0,
+morningMessages: Number(morningMessages) || 0,
+luckyCount: Number(luckyCount) || 0,
+badLuckCount: Number(badLuckCount) || 0
 };
     }
   });
@@ -146,19 +154,23 @@ data.voiceXpToday || 0,
 data.voiceXpDate || "",
 data.dailyXp || 0,
 data.dailyXpDate || "",
-data.kingCount || 0
+data.kingCount || 0, 
+data.nightMessages || 0,
+data.morningMessages || 0,
+data.luckyCount || 0,
+data.badLuckCount || 0
 ]);
     });
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:O"
+    range: "工作表1!A2:S"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:O",
+    range: "工作表1!A2:S",
     valueInputOption: "RAW",
     requestBody: {
       values
@@ -540,7 +552,13 @@ client.on("guildMemberAdd", member => {
 
   dailyXp: 0,
   dailyXpDate: null,
-  kingCount: 0
+   kingCount: 0,
+
+  nightMessages: 0,
+  morningMessages: 0,
+  luckyCount: 0,
+  badLuckCount: 0
+      
 };
   } else {
     levelData[guildId][member.id].name = displayName;
@@ -572,7 +590,11 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   voiceMinutes: 0,
 voiceStart: null,
       voiceXpToday: 0,
-  voiceXpDate: null
+  voiceXpDate: null,
+      nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0
 };
   } else {
     levelData[guildId][newMember.id].name = displayName;
@@ -617,7 +639,11 @@ if (!levelData[guildId][userId]) {
   voiceMinutes: 0,
 voiceStart: null,
     voiceXpToday: 0,
-  voiceXpDate: null
+  voiceXpDate: null,
+    nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0
 };
 }
 
@@ -1015,7 +1041,11 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
   dailyXp: 0,
   dailyXpDate: null,
-  kingCount: 0
+  kingCount: 0,
+      nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0
 };
   }
 
