@@ -673,6 +673,21 @@ userData.dailyXp = (userData.dailyXp || 0) + 1;
 
 userData.name = displayName;
 userData.messages = (userData.messages || 0) + 1;
+    const hour = Number(
+  new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    hour12: false
+  })
+);
+
+if (hour >= 1 && hour < 5) {
+  userData.nightMessages = (userData.nightMessages || 0) + 1;
+}
+
+if (hour >= 6 && hour < 9) {
+  userData.morningMessages = (userData.morningMessages || 0) + 1;
+}
 await checkAchievements(message, userData);
 const newLevel = getLevel(userData.xp);
 
