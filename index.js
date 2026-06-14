@@ -392,7 +392,11 @@ async function checkAchievements(message, userData, extra = {}) {
 { id: "voice50", name: "🎧 語音常客 I", requirement: 3000, reward: 50, type: "voiceMinutes" },
 { id: "voice200", name: "🎧 語音常客 II", requirement: 12000, reward: 100, type: "voiceMinutes" },
 { id: "voice500", name: "🎧 語音常客 III", requirement: 30000, reward: 200, type: "voiceMinutes" },
-{ id: "voice1000", name: "📻 公會電台", requirement: 60000, reward: 500, type: "voiceMinutes", hidden: true }
+{ id: "voice1000", name: "📻 公會電台", requirement: 60000, reward: 500, type: "voiceMinutes", hidden: true },
+    { id: "nightOwl", name: "🌙 夜貓子", requirement: 100, reward: 100, type: "nightMessages", hidden: true },
+{ id: "earlyBird", name: "☀️ 早鳥", requirement: 50, reward: 80, type: "morningMessages", hidden: true },
+{ id: "luckyGod", name: "🍀 歐皇降臨", requirement: 3, reward: 100, type: "luckyCount", hidden: true },
+{ id: "badLuckWarrior", name: "💀 非洲戰神", requirement: 10, reward: 100, type: "badLuckCount", hidden: true }
     
   ];
 
@@ -419,6 +423,21 @@ async function checkAchievements(message, userData, extra = {}) {
     if (achievement.type === "voiceMinutes") {
   completed =
     (userData.voiceMinutes || 0) >= achievement.requirement;
+}
+    if (achievement.type === "nightMessages") {
+  completed = (userData.nightMessages || 0) >= achievement.requirement;
+}
+
+if (achievement.type === "morningMessages") {
+  completed = (userData.morningMessages || 0) >= achievement.requirement;
+}
+
+if (achievement.type === "luckyCount") {
+  completed = (userData.luckyCount || 0) >= achievement.requirement;
+}
+
+if (achievement.type === "badLuckCount") {
+  completed = (userData.badLuckCount || 0) >= achievement.requirement;
 }
 
     if (completed && !achievements.includes(achievement.id)) {
@@ -830,7 +849,11 @@ if (levelChannel) {
 { id: "voice50", name: "🎧 語音常客 I" },
 { id: "voice200", name: "🎧 語音常客 II" },
 { id: "voice500", name: "🎧 語音常客 III" },
-{ id: "voice1000", name: "📻 公會電台", hidden: true }
+{ id: "voice1000", name: "📻 公會電台", hidden: true },
+    { id: "nightOwl", name: "🌙 夜貓子", hidden: true },
+{ id: "earlyBird", name: "☀️ 早鳥", hidden: true },
+{ id: "luckyGod", name: "🍀 歐皇降臨", hidden: true },
+{ id: "badLuckWarrior", name: "💀 非洲戰神", hidden: true }
     
 ];
 
