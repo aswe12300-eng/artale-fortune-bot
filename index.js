@@ -689,7 +689,8 @@ if (levelChannel) {
   { id: "talk500", name: "💬 話癆 III" },
 
   { id: "elder", name: "🍁 公會元老", hidden: true },
-  { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true }
+  { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true },
+    { id: "ghost", name: "👻 幽靈成員", hidden: true }
 ];
 
   const text = achievementList
