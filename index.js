@@ -25,6 +25,7 @@ const IGNORED_XP_CHANNELS = [
 let levelData = {};
 
 const xpCooldown = new Map();
+const voiceSessions = new Map();
 
 if (fs.existsSync(DATA_FILE)) {
   levelData = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -70,13 +71,13 @@ function createExpBar(currentXp, requiredXp) {
 async function loadLevelsFromSheet() {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:H"
+    range: "工作表1!A2:I"
   });
 
   const rows = res.data.values || [];
 
   rows.forEach(row => {
-    const [guildId, userId, name, xp, level, messages, achievements] = row;
+    const [guildId, userId, name, xp, level, messages, achievements, voiceMinutes] = row;
 
     if (guildId && userId) {
       if (!levelData[guildId]) {
@@ -90,6 +91,7 @@ async function loadLevelsFromSheet() {
   achievements: achievements
   ? achievements.split(",").filter(a => a.startsWith("talk"))
   : []
+        voiceMinutes: Number(voiceMinutes) || 0
 };;
     }
   });
@@ -109,8 +111,9 @@ async function saveLevelsToSheet() {
   data.xp || 0,
   getLevel(data.xp || 0),
   data.messages || 0,
-  (data.achievements || []).join(","),
-  new Date().toLocaleString("zh-TW", {
+ (data.achievements || []).join(","),
+data.voiceMinutes || 0,
+new Date().toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei"
   })
 ]);
@@ -119,12 +122,12 @@ async function saveLevelsToSheet() {
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:H"
+    range: "工作表1!A2:I"
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:H",
+    range: "工作表1!A2:I",
     valueInputOption: "RAW",
     requestBody: {
       values
@@ -410,7 +413,8 @@ client.on("guildMemberAdd", member => {
   xp: 0,
   name: displayName,
   messages: 0,
-  achievements: []
+  achievements: [],
+  voiceMinutes: 0
 };
   } else {
     levelData[guildId][member.id].name = displayName;
@@ -435,11 +439,12 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   if (!levelData[guildId][newMember.id]) {
     levelData[guildId][newMember.id] = {
-      xp: 0,
-      name: displayName,
-      messages: 0,
-      achievements: []
-    };
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0
+};
   } else {
     levelData[guildId][newMember.id].name = displayName;
   }
@@ -479,7 +484,8 @@ if (!levelData[guildId][userId]) {
   xp: 0,
   name: displayName,
   messages: 0,
-  achievements: []
+  achievements: [],
+  voiceMinutes: 0
 };
 }
 
@@ -589,6 +595,11 @@ if (levelChannel) {
     value: `${userData.achievements?.length || 0} 個`,
     inline: true
   },
+          {
+  name: "🎧 語音時數",
+  value: `${((userData.voiceMinutes || 0) / 60).toFixed(1)} 小時`,
+  inline: true
+},
   {
     name: "⭐ 經驗條",
     value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`,
@@ -721,18 +732,68 @@ client.on("interactionCreate", async interaction => {
 const LEAVE_CHANNEL_ID = "1497601369518116874";       // 管理群
 const LEVEL_CHANNEL_ID = "1515361647722496182";       // 公會紀錄
 const ACHIEVEMENT_CHANNEL_ID = "1515361647722496182"; // 公會紀錄
-client.on("voiceStateUpdate", (oldState, newState) => {
+client.on("voiceStateUpdate", async (oldState, newState) => {
 
+  const member = newState.member || oldState.member;
+
+  if (!member || member.user.bot) return;
+
+  const guildId = member.guild.id;
+  const userId = member.id;
+
+  // 進入語音
   if (!oldState.channel && newState.channel) {
-    console.log(
-      `${newState.member.displayName} 進入語音`
+
+    voiceSessions.set(
+      `${guildId}-${userId}`,
+      Date.now()
     );
+
+    return;
   }
 
+  // 離開語音
   if (oldState.channel && !newState.channel) {
-    console.log(
-      `${oldState.member.displayName} 離開語音`
+
+    const key = `${guildId}-${userId}`;
+
+    const startTime = voiceSessions.get(key);
+
+    if (!startTime) return;
+
+    const minutes = Math.floor(
+      (Date.now() - startTime) / 60000
     );
+
+    voiceSessions.delete(key);
+
+    if (!levelData[guildId]) {
+      levelData[guildId] = {};
+    }
+
+    if (!levelData[guildId][userId]) {
+      levelData[guildId][userId] = {
+        xp: 0,
+        name: member.displayName,
+        messages: 0,
+        achievements: [],
+        voiceMinutes: 0
+      };
+    }
+
+    levelData[guildId][userId].voiceMinutes += minutes;
+
+    console.log(
+      `🎧 ${member.displayName} 語音 ${minutes} 分鐘`
+    );
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
 });
