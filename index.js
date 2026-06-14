@@ -828,7 +828,51 @@ if (message.content.trim() === "-語音排行") {
     ]
   });
 }
+if (message.content.trim() === "-我的排名") {
+  const guildRanking = levelData[guildId] || {};
 
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => (b[1].xp || 0) - (a[1].xp || 0));
+
+  const myIndex = ranking.findIndex(([id]) => id === userId);
+  const myRank = myIndex + 1;
+
+  const myData = guildRanking[userId];
+
+  const prevData = myIndex > 0 ? ranking[myIndex - 1][1] : null;
+  const topData = ranking[0]?.[1];
+
+  const gapToPrev = prevData
+    ? (prevData.xp || 0) - (myData.xp || 0)
+    : 0;
+
+  const gapToTop = topData
+    ? (topData.xp || 0) - (myData.xp || 0)
+    : 0;
+
+  const rankText =
+    myRank === 1
+      ? "👑 你目前是本伺服器活躍王！"
+      : `距離上一名還差 **${gapToPrev} XP**\n距離第一名還差 **${gapToTop} XP**`;
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle(`🏆 ${displayName} 的排名`)
+        .setDescription(
+          `📍 目前排名：**#${myRank} / ${ranking.length}**\n\n` +
+          `🔥 活躍值：**${myData.xp || 0} XP**\n` +
+          `🏅 等級：**Lv.${getLevel(myData.xp || 0)}**\n\n` +
+          rankText
+        )
+        .setFooter({
+          text: "依照本伺服器總活躍值排名"
+        })
+        .setTimestamp()
+    ]
+  });
+}
 if (message.content.trim() === "-排行榜") {
   const guildRanking = levelData[guildId] || {};
 
