@@ -426,7 +426,7 @@ client.once("ready", async () => {
   console.log(`✅ ${client.user.tag} 已上線`);
 });
 // ===== 每日活躍王結算 =====
-cron.schedule("0 0 * * *", async () => {
+// cron.schedule("0 0 * * *", async () => {
   console.log("👑 開始每日活躍王結算");
 
   for (const [guildId, users] of Object.entries(levelData)) {
