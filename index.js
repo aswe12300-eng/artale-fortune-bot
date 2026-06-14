@@ -631,23 +631,13 @@ if (levelChannel) {
 
   return message.reply(result);
 }
-  if (message.content.trim() === "-成就") {
-
+ if (message.content.trim() === "-成就") {
   const achievements = userData.achievements || [];
 
   const achievementList = [
-    {
-      id: "talk50",
-      name: "💬 話癆 I"
-    },
-    {
-      id: "talk200",
-      name: "💬 話癆 II"
-    },
-    {
-      id: "talk500",
-      name: "💬 話癆 III"
-    }
+    { id: "talk50", name: "💬 話癆 I" },
+    { id: "talk200", name: "💬 話癆 II" },
+    { id: "talk500", name: "💬 話癆 III" }
   ];
 
   const text = achievementList
@@ -671,7 +661,9 @@ if (levelChannel) {
         .setTimestamp()
     ]
   });
-    if (message.content.trim() === "-語音排行") {
+}
+
+if (message.content.trim() === "-語音排行") {
   const guildRanking = levelData[guildId] || {};
 
   const ranking = Object.entries(guildRanking)
@@ -696,8 +688,8 @@ if (levelChannel) {
     ]
   });
 }
-}
-  if (message.content.trim() === "-排行榜") {
+
+if (message.content.trim() === "-排行榜") {
   const guildRanking = levelData[guildId] || {};
 
   const ranking = Object.entries(guildRanking)
