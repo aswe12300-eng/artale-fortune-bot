@@ -545,9 +545,19 @@ const userData = levelData[guildId][userId];
 
     const oldLevel = getLevel(userData.xp);
 
-  userData.xp += 1;
-userData.name = displayName;
+const today = new Date().toLocaleDateString("zh-TW", {
+  timeZone: "Asia/Taipei"
+});
 
+if (userData.dailyXpDate !== today) {
+  userData.dailyXpDate = today;
+  userData.dailyXp = 0;
+}
+
+userData.xp += 1;
+userData.dailyXp = (userData.dailyXp || 0) + 1;
+
+userData.name = displayName;
 userData.messages = (userData.messages || 0) + 1;
 await checkAchievements(message, userData);
 const newLevel = getLevel(userData.xp);
@@ -878,6 +888,12 @@ const remainingVoiceXp = Math.max(0, 15 - (userData.voiceXpToday || 0));
 const voiceXp = Math.min(rawVoiceXp, remainingVoiceXp);
 
 userData.xp += voiceXp;
+    if (userData.dailyXpDate !== today) {
+  userData.dailyXpDate = today;
+  userData.dailyXp = 0;
+}
+
+userData.dailyXp = (userData.dailyXp || 0) + voiceXp;
 userData.voiceXpToday = (userData.voiceXpToday || 0) + voiceXp;
 
 
