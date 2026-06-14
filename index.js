@@ -328,7 +328,7 @@ function createButtonRow() {
 
 // ===== 成就系統 =====
 
-async function checkAchievements(message, userData) {
+async function checkAchievements(message, userData, extra = {}) {
 
   const achievementChannel =
     message.guild.channels.cache.get(ACHIEVEMENT_CHANNEL_ID);
@@ -368,7 +368,15 @@ async function checkAchievements(message, userData) {
     reward: 50,
     type: "level",
     hidden: true
-  }
+  },
+     {
+  id: "voiceCamp",
+  name: "🏕️ 語音露營",
+  requirement: 480,
+  reward: 80,
+  type: "singleVoice",
+  hidden: true
+}
 ];
   ];
 
@@ -384,6 +392,10 @@ if (achievement.type === "messages") {
 if (achievement.type === "level") {
   completed =
     getLevel(userData.xp) >= achievement.requirement;
+}
+    if (achievement.type === "singleVoice") {
+  completed =
+    (extra.singleVoiceMinutes || 0) >= achievement.requirement;
 }
 
 if (
@@ -826,6 +838,15 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     }
 
     levelData[guildId][userId].voiceMinutes += minutes;
+    await checkAchievements(
+  {
+    guild: member.guild
+  },
+  levelData[guildId][userId],
+  {
+    singleVoiceMinutes: minutes
+  }
+);
 
     console.log(
       `🎧 ${member.displayName} 語音 ${minutes} 分鐘`
