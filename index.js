@@ -912,6 +912,22 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     voiceSessions.delete(key);
    userData.voiceStart = null;
 userData.voiceMinutes = (userData.voiceMinutes || 0) + minutes;
+    // 🎧 語音 XP：30 分鐘 = 1 XP，每日最多 15 XP
+const today = new Date().toLocaleDateString("zh-TW", {
+  timeZone: "Asia/Taipei"
+});
+
+if (userData.voiceXpDate !== today) {
+  userData.voiceXpDate = today;
+  userData.voiceXpToday = 0;
+}
+
+const rawVoiceXp = Math.floor(minutes / 30);
+const remainingVoiceXp = Math.max(0, 15 - (userData.voiceXpToday || 0));
+const voiceXp = Math.min(rawVoiceXp, remainingVoiceXp);
+
+userData.xp += voiceXp;
+userData.voiceXpToday = (userData.voiceXpToday || 0) + voiceXp;
 
 // 🎧 語音XP
 const voiceXp = Math.floor(minutes / 30);
@@ -927,8 +943,8 @@ await checkAchievements(
   }
 );
 
-  console.log(
-  `🎧 ${member.displayName} 語音 ${minutes} 分鐘 (+${voiceXp} XP)`
+ console.log(
+  `🎧 ${member.displayName} 語音 ${minutes} 分鐘 (+${voiceXp} XP，今日語音XP ${userData.voiceXpToday}/15)`
 );
 
     saveLevelData();
