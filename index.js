@@ -491,7 +491,9 @@ client.on("guildMemberAdd", member => {
   messages: 0,
   achievements: [],
   voiceMinutes: 0,
-voiceStart: null
+voiceStart: null,
+      voiceXpToday: 0,
+  voiceXpDate: null
 };
   } else {
     levelData[guildId][member.id].name = displayName;
@@ -521,7 +523,9 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   messages: 0,
   achievements: [],
   voiceMinutes: 0,
-voiceStart: null
+voiceStart: null,
+      voiceXpToday: 0,
+  voiceXpDate: null
 };
   } else {
     levelData[guildId][newMember.id].name = displayName;
@@ -564,7 +568,9 @@ if (!levelData[guildId][userId]) {
   messages: 0,
   achievements: [],
   voiceMinutes: 0,
-voiceStart: null
+voiceStart: null,
+    voiceXpToday: 0,
+  voiceXpDate: null
 };
 }
 
@@ -860,7 +866,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       messages: 0,
       achievements: [],
       voiceMinutes: 0,
-      voiceStart: null
+      voiceStart: null,
+      voiceXpToday: 0,
+  voiceXpDate: null
     };
   }
 
@@ -895,16 +903,26 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     const minutes = Math.floor((Date.now() - startTime) / 60000);
 
     voiceSessions.delete(key);
-    userData.voiceStart = null;
-    userData.voiceMinutes = (userData.voiceMinutes || 0) + minutes;
+   userData.voiceStart = null;
+userData.voiceMinutes = (userData.voiceMinutes || 0) + minutes;
 
-    await checkAchievements(
-      { guild: member.guild },
-      userData,
-      { singleVoiceMinutes: minutes }
-    );
+// 🎧 語音XP
+const voiceXp = Math.floor(minutes / 30);
+userData.xp += voiceXp;
 
-    console.log(`🎧 ${member.displayName} 語音 ${minutes} 分鐘`);
+await checkAchievements(
+  {
+    guild: member.guild
+  },
+  userData,
+  {
+    singleVoiceMinutes: minutes
+  }
+);
+
+  console.log(
+  `🎧 ${member.displayName} 語音 ${minutes} 分鐘 (+${voiceXp} XP)`
+);
 
     saveLevelData();
 
