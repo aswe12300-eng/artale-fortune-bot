@@ -90,8 +90,8 @@ async function loadLevelsFromSheet() {
   messages: Number(messages) || 0,
   achievements: achievements
   ? achievements.split(",").filter(a => a.startsWith("talk"))
-  : []
-        voiceMinutes: Number(voiceMinutes) || 0
+  : [],
+voiceMinutes: Number(voiceMinutes) || 0
 };;
     }
   });
