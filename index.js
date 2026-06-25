@@ -1224,20 +1224,28 @@ const userData = levelData[guildId][userId];
     interaction.member,
     fortune
   );
-  saveLevelData();
+
+  await interaction.deferReply();
+
+saveLevelData();
+
+try {
   await saveLevelsToSheet();
+} catch (err) {
+  console.error("按鈕占卜儲存失敗：", err);
+}
 
-  await interaction.reply({
-    embeds: [embed],
-    components: [createButtonRow()]
-  });
+await interaction.editReply({
+  embeds: [embed],
+  components: [createButtonRow()]
+});
 
-  await checkAchievements(
-    {
-      guild: interaction.guild
-    },
-    userData
-  );
+await checkAchievements(
+  {
+    guild: interaction.guild
+  },
+  userData
+);
 }
 });
 // =====================
