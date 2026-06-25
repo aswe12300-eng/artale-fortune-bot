@@ -1174,70 +1174,80 @@ if (message.content.trim() === "-排行榜") {
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isButton()) return;
+  if (interaction.customId !== "draw_fortune") return;
 
-  if (interaction.customId === "draw_fortune") {
+  try {
+    await interaction.deferReply();
 
-  const guildId = interaction.guild.id;
-  const userId = interaction.user.id;
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
 
-  if (!levelData[guildId]) {
-  levelData[guildId] = {};
-}
+    if (!levelData[guildId]) {
+      levelData[guildId] = {};
+    }
 
-if (!levelData[guildId][userId]) {
-  levelData[guildId][userId] = {
-    xp: 0,
-    name: interaction.member?.displayName || interaction.user.username,
-    messages: 0,
-    achievements: [],
-    voiceMinutes: 0,
-    voiceStart: null,
-    voiceXpToday: 0,
-    voiceXpDate: null,
-    dailyXp: 0,
-    dailyXpDate: null,
-    kingCount: 0,
-    nightMessages: 0,
-    morningMessages: 0,
-    luckyCount: 0,
-    badLuckCount: 0,
-    voiceXpMinutes: 0
-  };
-}
+    if (!levelData[guildId][userId]) {
+      levelData[guildId][userId] = {
+        xp: 0,
+        name: interaction.member?.displayName || interaction.user.username,
+        messages: 0,
+        achievements: [],
+        voiceMinutes: 0,
+        voiceStart: null,
+        voiceXpToday: 0,
+        voiceXpDate: null,
+        dailyXp: 0,
+        dailyXpDate: null,
+        kingCount: 0,
+        nightMessages: 0,
+        morningMessages: 0,
+        luckyCount: 0,
+        badLuckCount: 0,
+        voiceXpMinutes: 0
+      };
+    }
 
-const userData = levelData[guildId][userId];
+    const userData = levelData[guildId][userId];
 
-  const fortune = pick(fortunes);
+    const fortune = pick(fortunes);
 
-  if (fortune === "🌈 天選之人") {
-    userData.luckyCount =
-      (userData.luckyCount || 0) + 1;
+    if (fortune === "🌈 天選之人") {
+      userData.luckyCount = (userData.luckyCount || 0) + 1;
+    }
+
+    if (fortune === "💀 大凶") {
+      userData.badLuckCount = (userData.badLuckCount || 0) + 1;
+    }
+
+    const embed = createFortuneEmbed(
+      interaction.user,
+      interaction.member,
+      fortune
+    );
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("按鈕占卜儲存失敗：", err);
+    }
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+
+    await checkAchievements(
+      {
+        guild: interaction.guild
+      },
+      userData
+    );
+
+  } catch (err) {
+    console.error("再抽一次按鈕錯誤：", err);
   }
-
-  if (fortune === "💀 大凶") {
-    userData.badLuckCount =
-      (userData.badLuckCount || 0) + 1;
-  }
-
-  const embed = createFortuneEmbed(
-    interaction.user,
-    interaction.member,
-    fortune
-  );
-
-  await interaction.deferReply();
-
-saveLevelData();
-
-try {
-  await saveLevelsToSheet();
-} catch (err) {
-  console.error("按鈕占卜儲存失敗：", err);
-}
-
-await interaction.editReply({
-  embeds: [embed],
-  components: [createButtonRow()]
 });
 
 await checkAchievements(
