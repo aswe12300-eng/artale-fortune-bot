@@ -1208,7 +1208,6 @@ client.on("interactionCreate", async interaction => {
     }
 
     const userData = levelData[guildId][userId];
-
     const fortune = pick(fortunes);
 
     if (fortune === "🌈 天選之人") {
