@@ -1249,14 +1249,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-await checkAchievements(
-  {
-    guild: interaction.guild
-  },
-  userData
-);
-}
-});
+
 // =====================
 // 成員離開通知
 // =====================
