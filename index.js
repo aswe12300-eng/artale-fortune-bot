@@ -476,9 +476,15 @@ if (achievement.type === "badLuckCount") {
 
 
 client.once("ready", async () => {
-  await loadLevelsFromSheet();
   console.log(`✅ ${client.user.tag} 已上線`);
+
+  try {
+    await loadLevelsFromSheet();
+  } catch (err) {
+    console.error("Google Sheets 載入失敗：", err);
+  }
 });
+
 // ===== 每日活躍王結算 =====
 cron.schedule("0 0 * * *", async () => {
   console.log("👑 開始每日活躍王結算");
@@ -1410,4 +1416,6 @@ client.on("guildMemberRemove", async member => {
     console.error("成員離開通知錯誤：", err);
   }
 });
-client.login(TOKEN);
+client.login(TOKEN).catch(err => {
+  console.error("Discord 登入失敗：", err);
+});
