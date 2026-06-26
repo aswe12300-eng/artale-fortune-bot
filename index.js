@@ -1140,36 +1140,46 @@ if (message.content.trim() === "-排行榜") {
   });
 }
 
-  if (message.content.trim() === "-占卜") {
+if (message.content.trim() === "-占卜") {
+  try {
+    const fortune = pick(fortunes);
 
-  const fortune = pick(fortunes);
+    if (fortune === "🌈 天選之人") {
+      userData.luckyCount = (userData.luckyCount || 0) + 1;
+    }
 
-  if (fortune === "🌈 天選之人") {
-    userData.luckyCount =
-      (userData.luckyCount || 0) + 1;
+    if (fortune === "💀 大凶") {
+      userData.badLuckCount = (userData.badLuckCount || 0) + 1;
+    }
+
+    const embed = createFortuneEmbed(
+      message.author,
+      message.member,
+      fortune
+    );
+
+    await message.reply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("文字占卜儲存失敗：", err);
+    }
+
+    await checkAchievements(message, userData);
+
+  } catch (err) {
+    console.error("文字占卜錯誤：", err);
   }
 
-  if (fortune === "💀 大凶") {
-    userData.badLuckCount =
-      (userData.badLuckCount || 0) + 1;
-  }
-    
-  saveLevelData();
-  await saveLevelsToSheet();
-
-  const embed = createFortuneEmbed(
-    message.author,
-    message.member,
-    fortune
-  );
-
-  await message.reply({
-    embeds: [embed],
-    components: [createButtonRow()]
-  });
-
-  await checkAchievements(message, userData);
+  return;
 }
+
 });
 
 client.on("interactionCreate", async interaction => {
@@ -1224,6 +1234,11 @@ client.on("interactionCreate", async interaction => {
       fortune
     );
 
+    await interaction.editReply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+
     saveLevelData();
 
     try {
@@ -1232,15 +1247,8 @@ client.on("interactionCreate", async interaction => {
       console.error("按鈕占卜儲存失敗：", err);
     }
 
-    await interaction.editReply({
-      embeds: [embed],
-      components: [createButtonRow()]
-    });
-
     await checkAchievements(
-      {
-        guild: interaction.guild
-      },
+      { guild: interaction.guild },
       userData
     );
 
