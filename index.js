@@ -648,7 +648,7 @@ badLuckCount: 0,
 });
 
 client.on("messageCreate", async message => {
-
+console.log("收到訊息：", message.content);
   console.log(
     `[XP] ${message.guild?.name} | #${message.channel.name} | ${message.author.username}`
   );
