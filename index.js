@@ -183,7 +183,7 @@ data.voiceXpMinutes || 0
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot Running");
-}).listen(process.env.PORT || HTTP);
+}).listen(process.env.PORT || 3000);
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
