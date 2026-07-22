@@ -99,7 +99,39 @@ function createSheetsClient() {
 
   return { embeds: [embed], components: [row] };
 }
+function createExistingMemberRegisterPanel(member) {
+  const embed = new EmbedBuilder()
+    .setColor("#9B59FF")
+    .setTitle("📝 EtheReal 角色登記")
+    .setDescription(
+      `${member}，請點擊下方的 **【📝 登記角色】** 按鈕完成角色資料登記。\n\n` +
+      `完成登記後，Bot 將會：\n` +
+      `✅ 建立或更新角色資料\n` +
+      `✅ 同步至公會 Google 試算表\n` +
+      `✅ 一般會員自動修改 Discord 暱稱\n\n` +
+      `**暱稱格式**\n` +
+      `角色名稱 / 等級職業 / 其他角色\n\n` +
+      `例如：晴晴兒 /168冰雷 /135主教\n\n` +
+      `⚠️ 管理員或身分組高於 Bot 的成員，請依照完成後顯示的格式自行修改暱稱。`
+    )
+    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+    .setFooter({
+      text: "已登記過也可以重新登記更新完整資料"
+    });
 
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("character_register_start")
+      .setLabel("登記角色")
+      .setEmoji("📝")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  return {
+    embeds: [embed],
+    components: [row]
+  };
+}
 function createJobSelect(customId = "character_register_job", placeholder = "請選擇主要職業") {
   const menu = new StringSelectMenuBuilder()
     .setCustomId(customId)
@@ -313,9 +345,11 @@ function setupRegistration(client) {
     const content = message.content.trim();
 
     if (["-登記角色", "-角色登記"].includes(content)) {
-      await message.channel.send(createRegisterPanel(message.member));
-      return;
-    }
+  await message.channel.send(
+    createExistingMemberRegisterPanel(message.member)
+  );
+  return;
+}
 
     if (content === "-我的角色") {
       const data = await getCharacterRegistration(
