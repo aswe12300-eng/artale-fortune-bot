@@ -32,18 +32,73 @@ function createSheetsClient() {
 }
 
 function createRegisterPanel(member) {
+  function createRegisterPanel(member) {
   const embed = new EmbedBuilder()
-    .setColor("#8E7CC3")
-    .setTitle("🍁 EtheReal 角色登記")
+    .setColor("#9B59FF")
+    .setTitle("🧚 新核心成員加入")
     .setDescription(
-      `${member ? `${member}，歡迎加入 EtheReal！\n\n` : ""}` +
-      "請點擊下方按鈕完成角色登記。一般會員登記後會自動修改伺服器暱稱。"
+      `大家熱烈歡迎 ${member} 成為 **EtheReal** 的戰鬥精靈！✨\n\n` +
+
+      `新夥伴請務必完成以下動作：\n\n` +
+
+      `**1️⃣ 📝 完成角色登記**\n\n` +
+      `請點擊下方的 **【📝 登記角色】** 按鈕，完成角色資料登記。\n\n` +
+      `完成後，Bot 將會：\n` +
+      `✅ 建立角色資料\n` +
+      `✅ 同步至公會 Google 試算表\n` +
+      `✅ 自動修改伺服器暱稱\n\n` +
+      `暱稱格式：角色名稱 / 等級職業 / 其他角色\n` +
+      `範例：晴晴兒 /168冰雷 /135主教\n\n` +
+      `⚠️ 若你的身分組高於機器人，Discord 將無法讓 Bot 自動改名，請依照 Bot 提供的格式自行修改。\n\n` +
+
+      `━━━━━━━━━━━━━━\n\n` +
+
+      `**2️⃣ 王團重要連結**\n\n` +
+      `🔹 王團報名： <#1493861592151097344>\n` +
+      `🔹 每週佈告欄： <#1493595715992289452>\n` +
+      `🔹 當日王團提醒： <#1489135137135525908>\n\n` +
+
+      `━━━━━━━━━━━━━━\n\n` +
+
+      `**3️⃣ 🤖 公會功能**\n\n` +
+      `⊹┊-🤖-ethereal指令中心： <#1526335381954498630>\n\n` +
+      `想快速了解公會 Bot 的所有功能嗎？\n` +
+      `請前往 Bot 指令中心查看完整教學與最新公告。\n\n` +
+      `目前已開放：\n` +
+      `🌟 活躍系統\n` +
+      `🔮 占卜系統\n` +
+      `🎵 Jockie Music\n\n` +
+      `⚠️ 請依照各功能說明，至對應頻道使用相關指令，避免影響其他成員聊天。\n\n` +
+
+      `━━━━━━━━━━━━━━\n\n` +
+
+      `**4️⃣ 🎁 公會福利**\n\n` +
+      `💋 公會好康： <#1526299439428534423>\n\n` +
+      `✨ EtheReal 擁有專屬公會名牌，歡迎大家一起使用！\n\n` +
+      `🔍 紙娃娃搜尋關鍵字：**EtheReal**\n\n` +
+      `⚠️ 購買前請注意：\n` +
+      `每個部位皆有 **兩種版本**：\n` +
+      `🔹 坐下沒有造型\n` +
+      `🔹 坐下有造型\n\n` +
+      `📌 建議購買前先預覽角色「坐下」的動作，再選擇自己喜歡的版本。\n\n` +
+      `🏷️ Discord 也提供公會專屬標籤，歡迎大家一起使用。\n\n` +
+      `🍁 歡迎加入 EtheReal～ 🍁`
     )
-    .addFields({
-      name: "暱稱格式",
-      value: "角色名稱/等級職業/其他角色等級職業\n例如：晴晴兒/155冰雷/120主教"
-    })
-    .setFooter({ text: "資料會同步至 Google 試算表的「角色登記」分頁" });
+    .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
+    .setFooter({
+      text: "請點擊下方按鈕完成角色登記"
+    });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("character_register_start")
+      .setLabel("登記角色")
+      .setEmoji("📝")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  return { embeds: [embed], components: [row] };
+}
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
