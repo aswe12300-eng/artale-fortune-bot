@@ -100,17 +100,6 @@ function createSheetsClient() {
   return { embeds: [embed], components: [row] };
 }
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("character_register_start")
-      .setLabel("登記角色")
-      .setEmoji("📝")
-      .setStyle(ButtonStyle.Primary)
-  );
-
-  return { embeds: [embed], components: [row] };
-}
-
 function createJobSelect(customId = "character_register_job", placeholder = "請選擇主要職業") {
   const menu = new StringSelectMenuBuilder()
     .setCustomId(customId)
