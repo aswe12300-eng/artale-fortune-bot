@@ -16,18 +16,8 @@ const REGISTER_LOG_CHANNEL_ID = "1529519154439258334";
 const CHARACTER_SHEET_NAME = "角色登記";
 
 const JOBS = [
-  "英雄",
-  "聖騎士",
-  "黑騎士",
-  "冰雷",
-  "火毒",
-  "主教",
-  "箭神",
-  "神射手",
-  "夜使者",
-  "暗影神偷",
-  "拳霸",
-  "槍神"
+  "英雄", "聖騎士", "黑騎士", "冰雷", "火毒", "主教",
+  "箭神", "神射手", "夜使者", "暗影神偷", "拳霸", "槍神"
 ];
 
 function createSheetsClient() {
@@ -38,7 +28,6 @@ function createSheetsClient() {
     privateKey,
     ["https://www.googleapis.com/auth/spreadsheets"]
   );
-
   return google.sheets({ version: "v4", auth });
 }
 
@@ -48,7 +37,7 @@ function createRegisterPanel(member) {
     .setTitle("🍁 EtheReal 角色登記")
     .setDescription(
       `${member ? `${member}，歡迎加入 EtheReal！\n\n` : ""}` +
-      "請點擊下方按鈕完成角色登記。登記後，機器人會自動幫你修改伺服器暱稱。"
+      "請點擊下方按鈕完成角色登記。一般會員登記後會自動修改伺服器暱稱。"
     )
     .addFields({
       name: "暱稱格式",
@@ -67,12 +56,11 @@ function createRegisterPanel(member) {
   return { embeds: [embed], components: [row] };
 }
 
-function createJobSelect() {
+function createJobSelect(customId = "character_register_job", placeholder = "請選擇主要職業") {
   const menu = new StringSelectMenuBuilder()
-    .setCustomId("character_register_job")
-    .setPlaceholder("請選擇主要職業")
+    .setCustomId(customId)
+    .setPlaceholder(placeholder)
     .addOptions(JOBS.map(job => ({ label: job, value: job })));
-
   return new ActionRowBuilder().addComponents(menu);
 }
 
@@ -110,7 +98,6 @@ function createRegisterModal(job) {
     new ActionRowBuilder().addComponents(levelInput),
     new ActionRowBuilder().addComponents(extraInput)
   );
-
   return modal;
 }
 
@@ -135,31 +122,41 @@ async function ensureCharacterSheet(sheets, spreadsheetId) {
     valueInputOption: "RAW",
     requestBody: {
       values: [[
-        "GuildID",
-        "Discord ID",
-        "Discord名稱",
-        "角色名稱",
-        "角色等級",
-        "主要職業",
-        "其他角色",
-        "完整暱稱",
-        "最後更新"
+        "GuildID", "Discord ID", "Discord名稱", "角色名稱", "角色等級",
+        "主要職業", "其他角色", "完整暱稱", "最後更新"
       ]]
     }
   });
 }
 
-async function saveCharacterRegistration(sheets, spreadsheetId, data) {
+async function getCharacterRegistration(sheets, spreadsheetId, guildId, userId) {
   await ensureCharacterSheet(sheets, spreadsheetId);
-
   const result = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `${CHARACTER_SHEET_NAME}!A2:I`
   });
-
   const rows = result.data.values || [];
-  const rowIndex = rows.findIndex(
-    row => row[0] === data.guildId && row[1] === data.userId
+  const rowIndex = rows.findIndex(row => row[0] === guildId && row[1] === userId);
+  if (rowIndex < 0) return null;
+  const row = rows[rowIndex];
+  return {
+    rowNumber: rowIndex + 2,
+    guildId: row[0] || "",
+    userId: row[1] || "",
+    discordName: row[2] || "",
+    characterName: row[3] || "",
+    level: Number(row[4]) || 0,
+    job: row[5] || "",
+    extraCharacters: row[6] || "",
+    nickname: row[7] || "",
+    updatedAt: row[8] || ""
+  };
+}
+
+async function saveCharacterRegistration(sheets, spreadsheetId, data) {
+  await ensureCharacterSheet(sheets, spreadsheetId);
+  const existing = await getCharacterRegistration(
+    sheets, spreadsheetId, data.guildId, data.userId
   );
 
   const values = [[
@@ -174,11 +171,10 @@ async function saveCharacterRegistration(sheets, spreadsheetId, data) {
     data.updatedAt
   ]];
 
-  if (rowIndex >= 0) {
-    const sheetRow = rowIndex + 2;
+  if (existing) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${CHARACTER_SHEET_NAME}!A${sheetRow}:I${sheetRow}`,
+      range: `${CHARACTER_SHEET_NAME}!A${existing.rowNumber}:I${existing.rowNumber}`,
       valueInputOption: "RAW",
       requestBody: { values }
     });
@@ -193,28 +189,63 @@ async function saveCharacterRegistration(sheets, spreadsheetId, data) {
   }
 }
 
-async function sendRegistrationLog(interaction, data) {
+function buildNickname(data) {
+  const full = [
+    data.characterName,
+    `${data.level}${data.job}`,
+    data.extraCharacters
+  ].filter(Boolean).join("/");
+  return { full, nickname: full.slice(0, 32) };
+}
+
+async function trySetNickname(member, nickname, reason) {
+  try {
+    await member.setNickname(nickname, reason);
+    return { changed: true, message: `✅ 暱稱已修改為：**${nickname}**` };
+  } catch (error) {
+    console.error("角色系統改暱稱失敗：", error);
+    return {
+      changed: false,
+      message:
+        "⚠️ Discord 無法自動修改你的暱稱。\n" +
+        "可能是你為管理員、伺服器擁有者，或你的最高身分組高於機器人。\n" +
+        `請自行修改為：**${nickname}**`
+    };
+  }
+}
+
+async function sendRegistrationLog(interaction, data, action = "角色登記完成") {
   const channel = interaction.guild.channels.cache.get(REGISTER_LOG_CHANNEL_ID);
   if (!channel?.isTextBased()) return;
 
   const embed = new EmbedBuilder()
     .setColor("#57F287")
-    .setTitle("✅ 角色登記完成")
+    .setTitle(`✅ ${action}`)
     .setThumbnail(interaction.user.displayAvatarURL({ extension: "png", size: 256 }))
     .addFields(
       { name: "Discord 成員", value: `${interaction.user}`, inline: true },
       { name: "角色名稱", value: data.characterName, inline: true },
       { name: "主要角色", value: `${data.level}${data.job}`, inline: true },
-      {
-        name: "其他角色",
-        value: data.extraCharacters || "無",
-        inline: false
-      },
+      { name: "其他角色", value: data.extraCharacters || "無", inline: false },
       { name: "完整暱稱", value: data.nickname, inline: false }
     )
     .setTimestamp();
-
   await channel.send({ embeds: [embed] });
+}
+
+function formatCharacterEmbed(user, data) {
+  return new EmbedBuilder()
+    .setColor("#58A6FF")
+    .setTitle(`🍁 ${data.characterName} 的角色資料`)
+    .setThumbnail(user.displayAvatarURL({ extension: "png", size: 256 }))
+    .addFields(
+      { name: "角色名稱", value: data.characterName, inline: true },
+      { name: "等級", value: `${data.level}`, inline: true },
+      { name: "職業", value: data.job, inline: true },
+      { name: "其他角色", value: data.extraCharacters || "無", inline: false },
+      { name: "暱稱格式", value: data.nickname || buildNickname(data).nickname, inline: false },
+      { name: "最後更新", value: data.updatedAt || "未記錄", inline: false }
+    );
 }
 
 function setupRegistration(client) {
@@ -226,11 +257,8 @@ function setupRegistration(client) {
       const hadRole = oldMember.roles.cache.has(REGISTER_ROLE_ID);
       const hasRole = newMember.roles.cache.has(REGISTER_ROLE_ID);
       if (hadRole || !hasRole) return;
-
       const channel = newMember.guild.channels.cache.get(REGISTER_CHANNEL_ID);
-      if (!channel?.isTextBased()) return;
-
-      await channel.send(createRegisterPanel(newMember));
+      if (channel?.isTextBased()) await channel.send(createRegisterPanel(newMember));
     } catch (error) {
       console.error("角色登記面板發送失敗：", error);
     }
@@ -238,9 +266,72 @@ function setupRegistration(client) {
 
   client.on("messageCreate", async message => {
     if (message.author.bot || !message.guild) return;
-    if (!["-登記角色", "-角色登記"].includes(message.content.trim())) return;
+    const content = message.content.trim();
 
-    await message.channel.send(createRegisterPanel(message.member));
+    if (["-登記角色", "-角色登記"].includes(content)) {
+      await message.channel.send(createRegisterPanel(message.member));
+      return;
+    }
+
+    if (content === "-我的角色") {
+      const data = await getCharacterRegistration(
+        sheets, spreadsheetId, message.guild.id, message.author.id
+      );
+      if (!data) {
+        await message.reply("你尚未登記角色，請先輸入 `-登記角色`。");
+        return;
+      }
+      await message.reply({ embeds: [formatCharacterEmbed(message.author, data)] });
+      return;
+    }
+
+    if (content.startsWith("-更新等級")) {
+      const match = content.match(/^-更新等級\s+(\d{1,3})$/);
+      if (!match) {
+        await message.reply("格式錯誤，請輸入：`-更新等級 161`");
+        return;
+      }
+      const newLevel = Number(match[1]);
+      if (newLevel < 1 || newLevel > 300) {
+        await message.reply("角色等級請填入 1～300 之間的數字。");
+        return;
+      }
+
+      const data = await getCharacterRegistration(
+        sheets, spreadsheetId, message.guild.id, message.author.id
+      );
+      if (!data) {
+        await message.reply("你尚未登記角色，請先輸入 `-登記角色`。");
+        return;
+      }
+
+      data.level = newLevel;
+      data.discordName = message.author.username;
+      data.updatedAt = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+      const names = buildNickname(data);
+      data.nickname = names.nickname;
+      await saveCharacterRegistration(sheets, spreadsheetId, data);
+      const nickResult = await trySetNickname(message.member, data.nickname, "更新角色等級");
+
+      await message.reply(
+        `✅ 等級已更新為 **${newLevel}${data.job}**。\n${nickResult.message}\n📄 Google 試算表已同步。`
+      );
+      return;
+    }
+
+    if (["-更新職業", "-更新角色"].includes(content)) {
+      const data = await getCharacterRegistration(
+        sheets, spreadsheetId, message.guild.id, message.author.id
+      );
+      if (!data) {
+        await message.reply("你尚未登記角色，請先輸入 `-登記角色`。");
+        return;
+      }
+      await message.reply({
+        content: "請選擇新的主要職業：",
+        components: [createJobSelect("character_update_job", "請選擇新的主要職業")]
+      });
+    }
   });
 
   client.on("interactionCreate", async interaction => {
@@ -253,7 +344,6 @@ function setupRegistration(client) {
           });
           return;
         }
-
         await interaction.reply({
           content: "請先選擇你的主要職業：",
           components: [createJobSelect()],
@@ -262,12 +352,33 @@ function setupRegistration(client) {
         return;
       }
 
-      if (
-        interaction.isStringSelectMenu() &&
-        interaction.customId === "character_register_job"
-      ) {
-        const selectedJob = interaction.values[0];
-        await interaction.showModal(createRegisterModal(selectedJob));
+      if (interaction.isStringSelectMenu() && interaction.customId === "character_register_job") {
+        await interaction.showModal(createRegisterModal(interaction.values[0]));
+        return;
+      }
+
+      if (interaction.isStringSelectMenu() && interaction.customId === "character_update_job") {
+        await interaction.deferReply({ ephemeral: true });
+        const data = await getCharacterRegistration(
+          sheets, spreadsheetId, interaction.guild.id, interaction.user.id
+        );
+        if (!data) {
+          await interaction.editReply("你尚未登記角色，請先輸入 `-登記角色`。");
+          return;
+        }
+
+        data.job = interaction.values[0];
+        data.discordName = interaction.user.username;
+        data.updatedAt = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+        const names = buildNickname(data);
+        data.nickname = names.nickname;
+        await saveCharacterRegistration(sheets, spreadsheetId, data);
+        const nickResult = await trySetNickname(interaction.member, data.nickname, "更新主要職業");
+        await sendRegistrationLog(interaction, data, "角色職業更新完成");
+
+        await interaction.editReply(
+          `✅ 主要職業已更新為 **${data.job}**。\n${nickResult.message}\n📄 Google 試算表已同步。`
+        );
         return;
       }
 
@@ -276,7 +387,6 @@ function setupRegistration(client) {
         interaction.customId.startsWith("character_register_modal:")
       ) {
         await interaction.deferReply({ ephemeral: true });
-
         const job = interaction.customId.split(":")[1];
         const characterName = interaction.fields.getTextInputValue("character_name").trim();
         const levelText = interaction.fields.getTextInputValue("character_level").trim();
@@ -289,35 +399,13 @@ function setupRegistration(client) {
           await interaction.editReply("角色等級只能填入 1～3 位數字，請重新登記。");
           return;
         }
-
         const level = Number(levelText);
         if (level < 1 || level > 300) {
           await interaction.editReply("角色等級請填入 1～300 之間的數字。");
           return;
         }
 
-        const fullNickname = [
-          characterName,
-          `${level}${job}`,
-          extraCharacters
-        ].filter(Boolean).join("/");
-
-        const nickname = fullNickname.slice(0, 32);
-        let nicknameChanged = true;
-        let nicknameError = "";
-
-        try {
-          await interaction.member.setNickname(nickname, "完成角色登記");
-        } catch (error) {
-          nicknameChanged = false;
-          nicknameError = "機器人權限或身分組順位不足，因此無法自動改名。";
-          console.error("角色登記改暱稱失敗：", error);
-        }
-
-        const updatedAt = new Date().toLocaleString("zh-TW", {
-          timeZone: "Asia/Taipei"
-        });
-
+        const updatedAt = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
         const data = {
           guildId: interaction.guild.id,
           userId: interaction.user.id,
@@ -326,32 +414,30 @@ function setupRegistration(client) {
           level,
           job,
           extraCharacters,
-          nickname,
+          nickname: "",
           updatedAt
         };
+        const names = buildNickname(data);
+        data.nickname = names.nickname;
 
         await saveCharacterRegistration(sheets, spreadsheetId, data);
+        const nickResult = await trySetNickname(interaction.member, data.nickname, "完成角色登記");
         await sendRegistrationLog(interaction, data);
 
-        const truncatedNotice = fullNickname.length > 32
-          ? "\n⚠️ Discord 暱稱上限為 32 字，因此已自動截短。"
+        const truncatedNotice = names.full.length > 32
+          ? "\n⚠️ Discord 暱稱上限為 32 字，因此建議暱稱已自動截短。"
           : "";
-        const nicknameNotice = nicknameChanged
-          ? `\n✅ 暱稱已修改為：**${nickname}**`
-          : `\n⚠️ ${nicknameError}`;
-
         await interaction.editReply(
-          `角色登記完成！${nicknameNotice}${truncatedNotice}\n📄 資料已同步至 Google 試算表。`
+          `✅ 角色登記完成！\n${nickResult.message}${truncatedNotice}\n📄 資料已同步至 Google 試算表。`
         );
       }
     } catch (error) {
-      console.error("角色登記互動處理失敗：", error);
-
-      const message = "角色登記時發生錯誤，請稍後再試，或通知管理員查看 Northflank Log。";
+      console.error("角色系統處理失敗：", error);
+      const text = "角色系統發生錯誤，請稍後再試，或通知管理員查看 Northflank Log。";
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(message).catch(() => {});
+        await interaction.editReply(text).catch(() => {});
       } else {
-        await interaction.reply({ content: message, ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: text, ephemeral: true }).catch(() => {});
       }
     }
   });
