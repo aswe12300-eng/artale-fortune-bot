@@ -1,16 +1,18 @@
 {
-  "name": "artale-fortune-bot",
-  "version": "1.0.0",
-  "description": "Artale Fortune Discord Bot",
+  "name": "ethereal-discord-bot",
+  "version": "2.0.0",
+  "private": true,
+  "description": "EtheReal Discord bot with activity, fortune and character registration systems",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "check": "node --check index.js && node --check src/coreBot.js && node --check src/registration.js"
   },
   "engines": {
-    "node": "22.x"
+    "node": ">=18"
   },
   "dependencies": {
-    "discord.js": "^14.15.3",
+    "discord.js": "^14.16.3",
     "googleapis": "^144.0.0",
     "node-cron": "^3.0.3"
   }
