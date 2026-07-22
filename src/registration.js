@@ -31,7 +31,7 @@ function createSheetsClient() {
   return google.sheets({ version: "v4", auth });
 }
 
-function createRegisterPanel(member) {
+
   function createRegisterPanel(member) {
   const embed = new EmbedBuilder()
     .setColor("#9B59FF")
