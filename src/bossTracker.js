@@ -14,7 +14,7 @@ const {
 // 設定
 // ==============================
 
-// 之後改成你的「野王紀錄 / 野王提醒」頻道 ID
+// 目前野王提醒固定發到這個頻道
 const BOSS_CHANNEL_ID = "1546602217371467786";
 
 // 幹部身分組
@@ -66,11 +66,13 @@ const WILD_BOSSES = {
 
 // ==============================
 // 暫存資料
-// 重啟 Bot 後會清空
+// Bot 重啟後會清空
 // ==============================
 
 const bossRecords = new Map();
+const searchRecords = [];
 const selectedBoss = new Map();
+const userChannels = new Map();
 
 // ==============================
 // 時間工具
@@ -88,53 +90,59 @@ function formatTime(timestamp) {
 }
 
 // ==============================
-// 建立野王面板
+// 取得使用者目前 CH
+// ==============================
+
+function getUserChannel(guildId, userId) {
+  return userChannels.get(`${guildId}:${userId}`);
+}
+
+function setUserChannel(guildId, userId, channelNumber) {
+  userChannels.set(`${guildId}:${userId}`, channelNumber);
+}
+
+// ==============================
+// 建立面板
 // ==============================
 
 function createBossPanel() {
   const embed = new EmbedBuilder()
     .setColor("#E67E22")
-    .setTitle("👑 EtheReal 野王重生紀錄")
+    .setTitle("👑 EtheReal 野王追蹤")
     .setDescription(
-      "請先從下方選擇野王。\n\n" +
-      "選好後點擊 **☠️ 已擊殺**，輸入 CH 即可完成紀錄。\n\n" +
-      "Bot 會自動計算：\n" +
-      "🌱 最早重生時間\n" +
-      "⏰ 最晚重生時間\n" +
-      "🔔 最早重生前 10 分鐘提醒\n" +
-      "🚨 進入重生區間提醒"
+      "先選擇野王，再使用下方按鈕回報。\n\n" +
+      "☠️ **已擊殺**：記錄擊殺時間並計算重生\n" +
+      "❌ **未找到**：記錄這一頻已搜尋過\n" +
+      "🔢 **更換 CH**：切換你目前所在頻道\n" +
+      "📋 **查看紀錄**：查看目前野王情報\n\n" +
+      "第一次使用時會請你輸入 CH，之後 Bot 會記住。"
     )
     .setFooter({
       text: "EtheReal｜野王追蹤系統"
     });
 
   const bossNames = Object.keys(WILD_BOSSES);
-
-  const rows = [];
+  const components = [];
 
   for (let i = 0; i < bossNames.length; i += 25) {
-    const options = bossNames
-      .slice(i, i + 25)
-      .map(name => ({
-        label: name,
-        value: name
-      }));
-
-    rows.push(
+    components.push(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`boss_select_${i / 25}`)
+          .setCustomId(`boss_select_${i}`)
           .setPlaceholder(
-            i === 0
-              ? "請選擇野王"
-              : "更多野王"
+            i === 0 ? "👑 選擇野王" : "👑 更多野王"
           )
-          .addOptions(options)
+          .addOptions(
+            bossNames.slice(i, i + 25).map(name => ({
+              label: name,
+              value: name
+            }))
+          )
       )
     );
   }
 
-  rows.push(
+  components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("boss_killed")
@@ -143,37 +151,74 @@ function createBossPanel() {
         .setStyle(ButtonStyle.Danger),
 
       new ButtonBuilder()
+        .setCustomId("boss_not_found")
+        .setLabel("未找到")
+        .setEmoji("❌")
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId("boss_change_channel")
+        .setLabel("更換 CH")
+        .setEmoji("🔢")
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
         .setCustomId("boss_view")
         .setLabel("查看紀錄")
         .setEmoji("📋")
-        .setStyle(ButtonStyle.Primary)
+        .setStyle(ButtonStyle.Success)
     )
   );
 
   return {
     embeds: [embed],
-    components: rows
+    components
   };
 }
 
 // ==============================
-// 啟動系統
+// CH 輸入視窗
+// ==============================
+
+function createChannelModal(type, bossName = "") {
+  const modal = new ModalBuilder()
+    .setCustomId(
+      bossName
+        ? `${type}:${bossName}`
+        : type
+    )
+    .setTitle("設定目前 CH");
+
+  const input = new TextInputBuilder()
+    .setCustomId("boss_channel")
+    .setLabel("請輸入目前 CH")
+    .setPlaceholder("例如：125")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(4);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(input)
+  );
+
+  return modal;
+}
+
+// ==============================
+// 啟動
 // ==============================
 
 function setupBossTracker(client) {
 
   // ============================
-  // 建立面板指令
+  // 建立面板
   // ============================
 
   client.on("messageCreate", async message => {
     if (message.author.bot) return;
     if (!message.guild) return;
 
-    if (
-      message.content.trim() !==
-      "-建立野王面板"
-    ) {
+    if (message.content.trim() !== "-建立野王面板") {
       return;
     }
 
@@ -194,8 +239,7 @@ function setupBossTracker(client) {
       return;
     }
 
-    
-
+    // 測試期間不限制建立面板頻道
     await message.channel.send(
       createBossPanel()
     );
@@ -204,276 +248,326 @@ function setupBossTracker(client) {
   });
 
   // ============================
-  // 按鈕 / 下拉
+  // Interaction
   // ============================
 
   client.on("interactionCreate", async interaction => {
     try {
 
-      // 選野王
+      if (!interaction.guild) return;
+
+      // ========================
+      // 選擇野王
+      // ========================
+
       if (
         interaction.isStringSelectMenu() &&
-        interaction.customId.startsWith(
-          "boss_select_"
-        )
+        interaction.customId.startsWith("boss_select_")
       ) {
-        const bossName =
-          interaction.values[0];
+        const bossName = interaction.values[0];
 
         selectedBoss.set(
-          interaction.user.id,
+          `${interaction.guild.id}:${interaction.user.id}`,
           bossName
+        );
+
+        const currentChannel = getUserChannel(
+          interaction.guild.id,
+          interaction.user.id
         );
 
         await interaction.reply({
           content:
-            `✅ 已選擇：**${bossName}**\n` +
-            "請點擊 **☠️ 已擊殺**。",
+            `👑 已選擇：**${bossName}**\n` +
+            (currentChannel
+              ? `📡 目前 CH：**${currentChannel}**\n\n`
+              : "📡 目前還沒有設定 CH\n\n") +
+            "可以直接按 **☠️ 已擊殺** 或 **❌ 未找到**。",
           ephemeral: true
         });
 
         return;
       }
 
-      // 已擊殺
+      // ========================
+      // 更換 CH
+      // ========================
+
       if (
         interaction.isButton() &&
-        interaction.customId ===
-          "boss_killed"
+        interaction.customId === "boss_change_channel"
       ) {
+        await interaction.showModal(
+          createChannelModal("boss_change_channel_modal")
+        );
+        return;
+      }
+
+      // ========================
+      // 已擊殺
+      // ========================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId === "boss_killed"
+      ) {
+        const key =
+          `${interaction.guild.id}:${interaction.user.id}`;
+
         const bossName =
-          selectedBoss.get(
-            interaction.user.id
-          );
+          selectedBoss.get(key);
 
         if (!bossName) {
           await interaction.reply({
-            content:
-              "❌ 請先從上方選擇一隻野王。",
+            content: "❌ 請先選擇野王。",
             ephemeral: true
           });
-
           return;
         }
 
-        const modal =
-          new ModalBuilder()
-            .setCustomId(
-              `boss_kill_modal:${bossName}`
-            )
-            .setTitle(
-              `${bossName}｜擊殺紀錄`
-            );
+        const currentChannel =
+          getUserChannel(
+            interaction.guild.id,
+            interaction.user.id
+          );
 
-        const channelInput =
-          new TextInputBuilder()
-            .setCustomId("boss_channel")
-            .setLabel("請輸入 CH")
-            .setPlaceholder(
-              "例如：125"
+        if (!currentChannel) {
+          await interaction.showModal(
+            createChannelModal(
+              "boss_killed_modal",
+              bossName
             )
-            .setStyle(
-              TextInputStyle.Short
-            )
-            .setRequired(true)
-            .setMaxLength(4);
+          );
+          return;
+        }
 
-        modal.addComponents(
-          new ActionRowBuilder()
-            .addComponents(
-              channelInput
-            )
+        await saveKillRecord(
+          interaction,
+          bossName,
+          currentChannel
         );
 
-        await interaction.showModal(modal);
         return;
       }
 
-      // Modal 提交
+      // ========================
+      // 未找到
+      // ========================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId === "boss_not_found"
+      ) {
+        const key =
+          `${interaction.guild.id}:${interaction.user.id}`;
+
+        const bossName =
+          selectedBoss.get(key);
+
+        if (!bossName) {
+          await interaction.reply({
+            content: "❌ 請先選擇野王。",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const currentChannel =
+          getUserChannel(
+            interaction.guild.id,
+            interaction.user.id
+          );
+
+        if (!currentChannel) {
+          await interaction.showModal(
+            createChannelModal(
+              "boss_not_found_modal",
+              bossName
+            )
+          );
+          return;
+        }
+
+        await saveNotFoundRecord(
+          interaction,
+          bossName,
+          currentChannel
+        );
+
+        return;
+      }
+
+      // ========================
+      // 更換 CH Modal
+      // ========================
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId ===
+          "boss_change_channel_modal"
+      ) {
+        const channelNumber =
+          parseChannelNumber(interaction);
+
+        if (!channelNumber) return;
+
+        setUserChannel(
+          interaction.guild.id,
+          interaction.user.id,
+          channelNumber
+        );
+
+        await interaction.reply({
+          content:
+            `✅ 目前頻道已更換為 **CH ${channelNumber}**`,
+          ephemeral: true
+        });
+
+        return;
+      }
+
+      // ========================
+      // 第一次擊殺輸入 CH
+      // ========================
+
       if (
         interaction.isModalSubmit() &&
         interaction.customId.startsWith(
-          "boss_kill_modal:"
+          "boss_killed_modal:"
         )
       ) {
         const bossName =
-          interaction.customId.split(
-            ":"
-          )[1];
-
-        const channelText =
-          interaction.fields
-            .getTextInputValue(
-              "boss_channel"
-            )
-            .trim();
-
-        if (!/^\d{1,4}$/.test(channelText)) {
-          await interaction.reply({
-            content:
-              "❌ CH 請只輸入數字，例如：125",
-            ephemeral: true
-          });
-
-          return;
-        }
+          interaction.customId.split(":")[1];
 
         const channelNumber =
-          Number(channelText);
+          parseChannelNumber(interaction);
 
-        if (
-          channelNumber < 1 ||
-          channelNumber > 2500
-        ) {
-          await interaction.reply({
-            content:
-              "❌ CH 請輸入 1～2500。",
-            ephemeral: true
-          });
+        if (!channelNumber) return;
 
-          return;
-        }
+        setUserChannel(
+          interaction.guild.id,
+          interaction.user.id,
+          channelNumber
+        );
 
-        const config =
-          WILD_BOSSES[bossName];
-
-        if (!config) {
-          await interaction.reply({
-            content:
-              "❌ 找不到這隻野王的資料。",
-            ephemeral: true
-          });
-
-          return;
-        }
-
-        const killedAt = Date.now();
-
-        const earliest =
-          killedAt +
-          config.min * 60 * 1000;
-
-        const latest =
-          killedAt +
-          config.max * 60 * 1000;
-
-        const key =
-          `${interaction.guild.id}:${bossName}:${channelNumber}`;
-
-        bossRecords.set(key, {
-          guildId:
-            interaction.guild.id,
+        await saveKillRecord(
+          interaction,
           bossName,
-          channelNumber,
-          killedAt,
-          earliest,
-          latest,
-          userId:
-            interaction.user.id
-        });
-
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor("#57F287")
-              .setTitle(
-                `☠️ ${bossName} 擊殺紀錄`
-              )
-              .addFields(
-                {
-                  name: "📡 頻道",
-                  value:
-                    `CH ${channelNumber}`,
-                  inline: true
-                },
-                {
-                  name: "☠️ 擊殺時間",
-                  value:
-                    formatTime(killedAt),
-                  inline: true
-                },
-                {
-                  name: "🌱 最早重生",
-                  value:
-                    formatTime(earliest),
-                  inline: true
-                },
-                {
-                  name: "⏰ 最晚重生",
-                  value:
-                    formatTime(latest),
-                  inline: true
-                },
-                {
-                  name: "👤 回報者",
-                  value:
-                    `${interaction.user}`,
-                  inline: true
-                }
-              )
-              .setFooter({
-                text:
-                  "已啟用自動重生提醒"
-              })
-          ]
-        });
+          channelNumber
+        );
 
         return;
       }
 
-      // 查看紀錄
+      // ========================
+      // 第一次未找到輸入 CH
+      // ========================
+
       if (
-        interaction.isButton() &&
-        interaction.customId ===
-          "boss_view"
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith(
+          "boss_not_found_modal:"
+        )
       ) {
-        const records = [
-          ...bossRecords.values()
-        ].filter(
-          record =>
-            record.guildId ===
-            interaction.guild.id
+        const bossName =
+          interaction.customId.split(":")[1];
+
+        const channelNumber =
+          parseChannelNumber(interaction);
+
+        if (!channelNumber) return;
+
+        setUserChannel(
+          interaction.guild.id,
+          interaction.user.id,
+          channelNumber
         );
 
-        if (records.length === 0) {
-          await interaction.reply({
-            content:
-              "📋 目前還沒有野王擊殺紀錄。",
-            ephemeral: true
-          });
+        await saveNotFoundRecord(
+          interaction,
+          bossName,
+          channelNumber
+        );
 
-          return;
-        }
+        return;
+      }
 
-        const sorted =
-          records
+      // ========================
+      // 查看紀錄
+      // ========================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId === "boss_view"
+      ) {
+        const guildId =
+          interaction.guild.id;
+
+        const kills =
+          [...bossRecords.values()]
+            .filter(
+              record =>
+                record.guildId === guildId
+            )
             .sort(
               (a, b) =>
                 a.earliest - b.earliest
-            )
-            .slice(0, 20);
+            );
 
-        const text =
-          sorted
-            .map(record => {
-              return (
-                `**${record.bossName}**｜` +
-                `CH ${record.channelNumber}\n` +
-                `🌱 ${formatTime(record.earliest)}` +
-                ` ～ ` +
-                `${formatTime(record.latest)}`
-              );
-            })
-            .join("\n\n");
+        const searches =
+          searchRecords
+            .filter(
+              record =>
+                record.guildId === guildId
+            )
+            .slice(-10)
+            .reverse();
+
+        let description = "";
+
+        if (kills.length > 0) {
+          description +=
+            "### ☠️ 擊殺 / 重生紀錄\n";
+
+          description +=
+            kills
+              .slice(0, 15)
+              .map(record =>
+                `**${record.bossName}**｜CH ${record.channelNumber}\n` +
+                `🌱 ${formatTime(record.earliest)} ～ ${formatTime(record.latest)}`
+              )
+              .join("\n\n");
+        }
+
+        if (searches.length > 0) {
+          if (description) {
+            description += "\n\n";
+          }
+
+          description +=
+            "### ❌ 最近未找到\n";
+
+          description +=
+            searches
+              .map(record =>
+                `**${record.bossName}**｜CH ${record.channelNumber}｜${formatTime(record.time)}`
+              )
+              .join("\n");
+        }
+
+        if (!description) {
+          description =
+            "目前還沒有任何野王紀錄。";
+        }
 
         await interaction.reply({
           embeds: [
             new EmbedBuilder()
               .setColor("#3498DB")
-              .setTitle(
-                "📋 野王重生紀錄"
+              .setTitle("📋 野王追蹤紀錄")
+              .setDescription(
+                description.slice(0, 4000)
               )
-              .setDescription(text)
           ],
           ephemeral: true
         });
@@ -486,6 +580,18 @@ function setupBossTracker(client) {
         "❌ 野王系統錯誤：",
         error
       );
+
+      if (
+        interaction.isRepliable() &&
+        !interaction.replied &&
+        !interaction.deferred
+      ) {
+        await interaction.reply({
+          content:
+            "❌ 野王系統發生錯誤，請稍後再試。",
+          ephemeral: true
+        }).catch(() => {});
+      }
     }
   });
 
@@ -496,10 +602,7 @@ function setupBossTracker(client) {
   setInterval(async () => {
     const now = Date.now();
 
-    for (
-      const [key, record]
-      of bossRecords
-    ) {
+    for (const [key, record] of bossRecords) {
 
       const guild =
         client.guilds.cache.get(
@@ -523,8 +626,7 @@ function setupBossTracker(client) {
         now >=
           record.earliest -
           10 * 60 * 1000 &&
-        now <
-          record.earliest
+        now < record.earliest
       ) {
         record.preReminderSent = true;
 
@@ -536,10 +638,10 @@ function setupBossTracker(client) {
                 `🔔 ${record.bossName} 即將重生`
               )
               .setDescription(
-                `📡 CH ${record.channelNumber}\n\n` +
+                `📡 **CH ${record.channelNumber}**\n\n` +
                 `🌱 最早重生：**${formatTime(record.earliest)}**\n` +
                 `⏰ 最晚重生：**${formatTime(record.latest)}**\n\n` +
-                "距離最早重生約 10 分鐘，可以準備找王了！"
+                "距離最早重生約 10 分鐘。"
               )
           ]
         });
@@ -560,16 +662,16 @@ function setupBossTracker(client) {
                 `🚨 ${record.bossName} 已進入重生區間`
               )
               .setDescription(
-                `📡 CH ${record.channelNumber}\n\n` +
+                `📡 **CH ${record.channelNumber}**\n\n` +
                 `🌱 最早：**${formatTime(record.earliest)}**\n` +
                 `⏰ 最晚：**${formatTime(record.latest)}**\n\n` +
-                "現在可以開始找王了！"
+                "可以開始找王了！"
               )
           ]
         });
       }
 
-      // 超過最晚重生 2 小時後清除
+      // 最晚重生後 2 小時清除
       if (
         now >
         record.latest +
@@ -580,6 +682,173 @@ function setupBossTracker(client) {
     }
 
   }, 60 * 1000);
+}
+
+// ==============================
+// 驗證 CH
+// ==============================
+
+function parseChannelNumber(interaction) {
+  const text =
+    interaction.fields
+      .getTextInputValue("boss_channel")
+      .trim();
+
+  if (!/^\d{1,4}$/.test(text)) {
+    interaction.reply({
+      content:
+        "❌ CH 請只輸入數字，例如：125",
+      ephemeral: true
+    }).catch(() => {});
+
+    return null;
+  }
+
+  const channelNumber = Number(text);
+
+  if (
+    channelNumber < 1 ||
+    channelNumber > 2500
+  ) {
+    interaction.reply({
+      content:
+        "❌ CH 請輸入 1～2500。",
+      ephemeral: true
+    }).catch(() => {});
+
+    return null;
+  }
+
+  return channelNumber;
+}
+
+// ==============================
+// 儲存擊殺
+// ==============================
+
+async function saveKillRecord(
+  interaction,
+  bossName,
+  channelNumber
+) {
+  const config =
+    WILD_BOSSES[bossName];
+
+  if (!config) {
+    await interaction.reply({
+      content:
+        "❌ 找不到這隻野王資料。",
+      ephemeral: true
+    });
+    return;
+  }
+
+  const killedAt = Date.now();
+
+  const earliest =
+    killedAt +
+    config.min * 60 * 1000;
+
+  const latest =
+    killedAt +
+    config.max * 60 * 1000;
+
+  const recordKey =
+    `${interaction.guild.id}:${bossName}:${channelNumber}`;
+
+  bossRecords.set(recordKey, {
+    guildId: interaction.guild.id,
+    bossName,
+    channelNumber,
+    killedAt,
+    earliest,
+    latest,
+    userId: interaction.user.id,
+    preReminderSent: false,
+    spawnReminderSent: false
+  });
+
+  await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#57F287")
+        .setTitle(
+          `☠️ ${bossName} 已擊殺`
+        )
+        .addFields(
+          {
+            name: "📡 CH",
+            value:
+              `${channelNumber}`,
+            inline: true
+          },
+          {
+            name: "☠️ 擊殺",
+            value:
+              formatTime(killedAt),
+            inline: true
+          },
+          {
+            name: "🌱 最早重生",
+            value:
+              formatTime(earliest),
+            inline: false
+          },
+          {
+            name: "⏰ 最晚重生",
+            value:
+              formatTime(latest),
+            inline: false
+          },
+          {
+            name: "👤 回報",
+            value:
+              `${interaction.user}`,
+            inline: true
+          }
+        )
+    ]
+  });
+}
+
+// ==============================
+// 儲存未找到
+// ==============================
+
+async function saveNotFoundRecord(
+  interaction,
+  bossName,
+  channelNumber
+) {
+  const time = Date.now();
+
+  searchRecords.push({
+    guildId: interaction.guild.id,
+    bossName,
+    channelNumber,
+    time,
+    userId: interaction.user.id
+  });
+
+  // 只保留最近 200 筆
+  if (searchRecords.length > 200) {
+    searchRecords.shift();
+  }
+
+  await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#95A5A6")
+        .setTitle(
+          `❌ ${bossName} 未找到`
+        )
+        .setDescription(
+          `📡 **CH ${channelNumber}**\n` +
+          `🕒 ${formatTime(time)}\n` +
+          `👤 ${interaction.user}`
+        )
+    ]
+  });
 }
 
 module.exports = {
