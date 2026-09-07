@@ -15,7 +15,7 @@ const {
 // ==============================
 
 // 之後改成你的「野王紀錄 / 野王提醒」頻道 ID
-const BOSS_CHANNEL_ID = "請填野王頻道ID";
+const BOSS_CHANNEL_ID = "1546602217371467786";
 
 // 幹部身分組
 const STAFF_ROLE_ID = "1487011622798102660";
