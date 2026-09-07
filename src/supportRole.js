@@ -22,6 +22,8 @@ const SUPPORT_INFO_CHANNEL_ID = "1546515478586073211";
 // 王團外援身分組
 const SUPPORT_ROLE_ID = "1546515986570543176";
 
+// 幹部身分組
+const STAFF_ROLE_ID = "1487011622798102660";
 
 // ==============================
 // 新人加入分流面板
@@ -233,23 +235,28 @@ function setupSupportRole(client) {
     }
 
 
-    // ==========================
-    // 僅限管理員
-    // ==========================
+   // ==========================
+// 僅限管理員 / 幹部
+// ==========================
 
-    if (
-      !message.member.permissions.has(
-        PermissionsBitField.Flags.Administrator
-      )
-    ) {
+const isAdministrator =
+  message.member.permissions.has(
+    PermissionsBitField.Flags.Administrator
+  );
 
-      await message.reply(
-        "❌ 只有管理員可以建立外援公告。"
-      );
+const isStaff =
+  message.member.roles.cache.has(
+    STAFF_ROLE_ID
+  );
 
-      return;
-    }
+if (!isAdministrator && !isStaff) {
 
+  await message.reply(
+    "❌ 只有管理員或幹部可以建立外援公告。"
+  );
+
+  return;
+}
 
     // ==========================
     // 必須在外援公告頻道使用
