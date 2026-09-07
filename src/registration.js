@@ -64,7 +64,7 @@ function createRegisterButtonRow() {
 function createRegisterPanel(member) {
   const embed = new EmbedBuilder()
     .setColor("#9B59FF")
-    .setTitle("🧚 新核心成員加入")
+    .setTitle("🍁 新公會成員加入")
     .setDescription(
       `大家熱烈歡迎 ${member} 成為 **EtheReal** 的ㄅㄇ手下！✨\n\n` +
 
