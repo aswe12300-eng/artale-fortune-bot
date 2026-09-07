@@ -194,12 +194,7 @@ function setupBossTracker(client) {
       return;
     }
 
-    if (message.channel.id !== BOSS_CHANNEL_ID) {
-      await message.reply(
-        `❌ 請到 <#${BOSS_CHANNEL_ID}> 使用這個指令。`
-      );
-      return;
-    }
+    
 
     await message.channel.send(
       createBossPanel()
