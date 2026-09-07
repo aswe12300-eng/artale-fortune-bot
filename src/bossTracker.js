@@ -141,7 +141,33 @@ function createBossPanel() {
       )
     );
   }
+function createQuickActionRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("boss_killed")
+      .setLabel("已擊殺")
+      .setEmoji("☠️")
+      .setStyle(ButtonStyle.Danger),
 
+    new ButtonBuilder()
+      .setCustomId("boss_not_found")
+      .setLabel("未找到")
+      .setEmoji("❌")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("boss_change_boss")
+      .setLabel("換王")
+      .setEmoji("🔄")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("boss_change_channel")
+      .setLabel("換 CH")
+      .setEmoji("🔢")
+      .setStyle(ButtonStyle.Primary)
+  );
+}
   components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -290,6 +316,47 @@ function setupBossTracker(client) {
       }
 
       // ========================
+// 換王
+// ========================
+
+if (
+  interaction.isButton() &&
+  interaction.customId === "boss_change_boss"
+) {
+  const bossNames = Object.keys(WILD_BOSSES);
+
+  const components = [];
+
+  for (let i = 0; i < bossNames.length; i += 25) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`boss_select_${i}`)
+          .setPlaceholder(
+            i === 0
+              ? "👑 選擇野王"
+              : "👑 更多野王"
+          )
+          .addOptions(
+            bossNames.slice(i, i + 25).map(name => ({
+              label: name,
+              value: name
+            }))
+          )
+      )
+    );
+  }
+
+  await interaction.reply({
+    content: "🔄 請選擇下一隻要回報的野王：",
+    components,
+    ephemeral: true
+  });
+
+  return;
+}
+
+      // ========================
       // 更換 CH
       // ========================
 
@@ -418,10 +485,25 @@ function setupBossTracker(client) {
         );
 
         await interaction.reply({
-          content:
-            `✅ 目前頻道已更換為 **CH ${channelNumber}**`,
-          ephemeral: true
-        });
+  embeds: [
+    new EmbedBuilder()
+      .setColor("#95A5A6")
+      .setTitle(
+        `❌ ${bossName} 未找到`
+      )
+      .setDescription(
+        `📡 **CH ${channelNumber}**\n` +
+        `🕒 ${formatTime(time)}\n` +
+        `👤 ${interaction.user}`
+      )
+      .setFooter({
+        text: `目前 CH ${channelNumber}｜可直接繼續回報`
+      })
+  ],
+  components: [
+    createQuickActionRow()
+  ]
+});
 
         return;
       }
@@ -836,19 +918,47 @@ async function saveNotFoundRecord(
   }
 
   await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#95A5A6")
-        .setTitle(
-          `❌ ${bossName} 未找到`
-        )
-        .setDescription(
-          `📡 **CH ${channelNumber}**\n` +
-          `🕒 ${formatTime(time)}\n` +
-          `👤 ${interaction.user}`
-        )
-    ]
-  });
+  embeds: [
+    new EmbedBuilder()
+      .setColor("#57F287")
+      .setTitle(
+        `☠️ ${bossName} 已擊殺`
+      )
+      .addFields(
+        {
+          name: "📡 CH",
+          value: `${channelNumber}`,
+          inline: true
+        },
+        {
+          name: "☠️ 擊殺",
+          value: formatTime(killedAt),
+          inline: true
+        },
+        {
+          name: "🌱 最早重生",
+          value: formatTime(earliest),
+          inline: false
+        },
+        {
+          name: "⏰ 最晚重生",
+          value: formatTime(latest),
+          inline: false
+        },
+        {
+          name: "👤 回報",
+          value: `${interaction.user}`,
+          inline: true
+        }
+      )
+      .setFooter({
+        text: `目前 CH ${channelNumber}｜可直接繼續回報`
+      })
+  ],
+  components: [
+    createQuickActionRow()
+  ]
+});
 }
 
 module.exports = {
