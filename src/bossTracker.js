@@ -103,34 +103,67 @@ function setUserChannel(guildId, userId, channelNumber) {
 // ==============================
 
 function createBossPanel() {
+  const bossNames = Object.keys(WILD_BOSSES);
+
+  const group1 = bossNames.slice(0, 12);
+  const group2 = bossNames.slice(12, 24);
+  const group3 = bossNames.slice(24);
+
   const embed = new EmbedBuilder()
     .setColor("#E67E22")
     .setTitle("👑 EtheReal 野王追蹤")
     .setDescription(
-      "先選擇野王，再使用下方按鈕回報。\n\n" +
-      "☠️ **已擊殺**：記錄擊殺時間並計算重生\n" +
-      "❌ **未找到**：記錄這一頻已搜尋過\n" +
-      "🔢 **更換 CH**：切換你目前所在頻道\n" +
-      "📋 **查看紀錄**：查看目前野王情報\n\n" +
+      "以下為目前全部野王，一次就能看到，不需要再按「更多野王」。\n\n" +
+      "先在下方選單選擇野王，再使用按鈕回報。\n" +
       "第一次使用時會請你輸入 CH，之後 Bot 會記住。"
     )
+    .addFields(
+      {
+        name: "👑 野王 1",
+        value: group1.map(name => `• ${name}`).join("\n"),
+        inline: true
+      },
+      {
+        name: "👑 野王 2",
+        value: group2.map(name => `• ${name}`).join("\n"),
+        inline: true
+      },
+      {
+        name: "👑 野王 3",
+        value: group3.map(name => `• ${name}`).join("\n"),
+        inline: true
+      }
+    )
     .setFooter({
-      text: "EtheReal｜野王追蹤系統"
+      text: "☠️ 已擊殺｜❌ 未找到｜🔢 換CH｜📋 紀錄"
     });
 
-  const bossNames = Object.keys(WILD_BOSSES);
   const components = [];
 
-  for (let i = 0; i < bossNames.length; i += 25) {
+  // Discord 單一選單最多 25 個選項，所以選擇功能仍需拆成兩個選單。
+  // 但全部 35 隻野王名稱已經直接顯示在上方，不需要再按「更多野王」才能看到。
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("boss_select_0")
+        .setPlaceholder("👑 選擇野王（1～25）")
+        .addOptions(
+          bossNames.slice(0, 25).map(name => ({
+            label: name,
+            value: name
+          }))
+        )
+    )
+  );
+
+  if (bossNames.length > 25) {
     components.push(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`boss_select_${i}`)
-          .setPlaceholder(
-            i === 0 ? "👑 選擇野王" : "👑 更多野王"
-          )
+          .setCustomId("boss_select_25")
+          .setPlaceholder("👑 選擇野王（26～35）")
           .addOptions(
-            bossNames.slice(i, i + 25).map(name => ({
+            bossNames.slice(25).map(name => ({
               label: name,
               value: name
             }))
@@ -138,6 +171,7 @@ function createBossPanel() {
       )
     );
   }
+
   components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -171,7 +205,6 @@ function createBossPanel() {
     components
   };
 }
-
 
 function createQuickActionRow() {
   return new ActionRowBuilder().addComponents(
