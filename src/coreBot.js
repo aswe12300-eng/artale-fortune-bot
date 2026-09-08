@@ -1,1253 +1,1419 @@
 const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  ModalBuilder,
-  StringSelectMenuBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  ButtonStyle
 } = require("discord.js");
 
+const http = require("http");
+
+const fs = require("fs");
 const { google } = require("googleapis");
+const cron = require("node-cron");
 
-// ==============================
-// 設定
-// ==============================
+const DATA_FILE = "./levels.json";
 
-// 目前野王提醒固定發到這個頻道
-const BOSS_CHANNEL_ID = "1546772691984588811";
+const IGNORED_XP_CHANNELS = [
+  "1487074463563649164", // 規章公告
+  "1487146529667026986", // 官方消息
+  "1487033416330383432", // 新人報到
+  "1512732594595434547", // 點歌台
+  "1497601369518116874", // 管理群
+  "1515361647722496182"  // 🏆 公會活躍紀錄
+];
 
-// Google Sheets：沿用 coreBot.js 已經使用的同一組環境變數
+let levelData = {};
+
+const xpCooldown = new Map();
+const voiceSessions = new Map();
+
+if (fs.existsSync(DATA_FILE)) {
+  levelData = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+}
+
+function saveLevelData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(levelData, null, 2));
+}
+
+function getLevel(xp) {
+  return Math.floor(Math.sqrt(xp / 5));
+}
+
+function getRequiredXp(level) {
+  return (level + 1) * (level + 1) * 5;
+}
+
+// ===== 稱號系統 =====
+
+function getTitle(level) {
+  if (level >= 50) return "🌈 EtheReal 傳說";
+  if (level >= 30) return "👑 EtheReal 菁英";
+  if (level >= 20) return "🔥 核心成員";
+  if (level >= 10) return "⚔️ 活躍會員";
+  if (level >= 5) return "🌱 公會新兵";
+
+  return "🍁 初心冒險者";
+}
+
+function createExpBar(currentXp, requiredXp) {
+  const totalBars = 10;
+
+  const safeCurrentXp = Math.max(0, currentXp);
+  const safeRequiredXp = Math.max(1, requiredXp);
+
+  const percent = Math.min(safeCurrentXp / safeRequiredXp, 1);
+
+  const filledBars = Math.floor(percent * totalBars);
+  const emptyBars = totalBars - filledBars;
+
+  return "🟩".repeat(filledBars) + "⬜".repeat(emptyBars);
+}
+async function loadLevelsFromSheet() {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:T"
+  });
+
+  const rows = res.data.values || [];
+
+  rows.forEach(row => {
+    const [
+  guildId,
+  userId,
+  name,
+  xp,
+  level,
+  messages,
+  achievements,
+  voiceMinutes,
+  voiceStart,
+  lastUpdate,
+voiceXpToday,
+voiceXpDate,
+dailyXp,
+dailyXpDate,
+kingCount,
+nightMessages,
+morningMessages,
+luckyCount,
+badLuckCount,
+voiceXpMinutes
+] = row;
+
+    if (guildId && userId) {
+      if (!levelData[guildId]) {
+        levelData[guildId] = {};
+      }
+
+      levelData[guildId][userId] = {
+  name: name || "未知成員",
+  xp: Number(xp) || 0,
+  messages: Number(messages) || 0,
+  achievements: achievements
+    ? achievements.split(",")
+    : [],
+  voiceMinutes: Number(voiceMinutes) || 0,
+  voiceStart: voiceStart || null,
+  voiceXpToday: Number(voiceXpToday) || 0,
+  voiceXpDate: voiceXpDate || null,
+
+  dailyXp: Number(dailyXp) || 0,
+  dailyXpDate: dailyXpDate || null,
+  kingCount: Number(kingCount) || 0,
+nightMessages: Number(nightMessages) || 0,
+morningMessages: Number(morningMessages) || 0,
+luckyCount: Number(luckyCount) || 0,
+badLuckCount: Number(badLuckCount) || 0,
+voiceXpMinutes: Number(voiceXpMinutes) || 0
+};
+    }
+  });
+
+  console.log("✅ 已從 Google Sheets 載入多伺服器 XP");
+}
+
+async function saveLevelsToSheet() {
+  const values = [];
+
+  Object.entries(levelData).forEach(([guildId, users]) => {
+    Object.entries(users).forEach(([userId, data]) => {
+     values.push([
+  guildId,
+  userId,
+  data.name || "未知成員",
+  data.xp || 0,
+  getLevel(data.xp || 0),
+  data.messages || 0,
+ (data.achievements || []).join(","),
+data.voiceMinutes || 0,
+data.voiceStart || "",
+new Date().toLocaleString("zh-TW", {
+  timeZone: "Asia/Taipei"
+}),
+data.voiceXpToday || 0,
+data.voiceXpDate || "",
+data.dailyXp || 0,
+data.dailyXpDate || "",
+data.kingCount || 0, 
+data.nightMessages || 0,
+data.morningMessages || 0,
+data.luckyCount || 0,
+data.badLuckCount || 0,
+data.voiceXpMinutes || 0
+]);
+    });
+  });
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:T"
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:T",
+    valueInputOption: "RAW",
+    requestBody: {
+      values
+    }
+  });
+}
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Bot Running");
+}).listen(process.env.PORT || 3000);
+
+const TOKEN = process.env.DISCORD_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
 const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
-const GOOGLE_PRIVATE_KEY =
-  process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-const BOSS_SHEET_NAME = "野王紀錄";
-
-const bossSheetAuth = new google.auth.JWT(
+const auth = new google.auth.JWT(
   GOOGLE_CLIENT_EMAIL,
   null,
   GOOGLE_PRIVATE_KEY,
   ["https://www.googleapis.com/auth/spreadsheets"]
 );
 
-const bossSheets = google.sheets({
+const sheets = google.sheets({
   version: "v4",
-  auth: bossSheetAuth
+  auth
 });
 
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
+  ]
+});
 
-
-// ==============================
-// 野王重生資料（分鐘）
-// ==============================
-
-const WILD_BOSSES = {
-  "紅寶王": { min: 23, max: 30 },
-  "樹妖王": { min: 23, max: 30 },
-  "仙人掌老": { min: 68, max: 90 },
-  "殭屍猴王": { min: 38, max: 45 },
-  "巨居蟹": { min: 45, max: 60 },
-  "冥界幽靈": { min: 45, max: 60 },
-  "咕咕鐘": { min: 68, max: 90 },
-  "仙人娃娃": { min: 158, max: 180 },
-  "喵怪仙人": { min: 150, max: 170 },
-  "蘑菇王": { min: 210, max: 240 },
-  "書生幽靈": { min: 150, max: 300 },
-  "巨大深山人蔘": { min: 60, max: 135 },
-  "紅藍雙怪": { min: 113, max: 135 },
-  "雪山魔女": { min: 158, max: 180 },
-  "沼澤巨鱷": { min: 90, max: 105 },
-  "殭屍蘑菇王": { min: 195, max: 225 },
-  "厄運死神": { min: 45, max: 105 },
-  "葛雷金剛": { min: 270, max: 350 },
-  "竹刀武士": { min: 113, max: 128 },
-  "九尾妖狐": { min: 210, max: 570 },
-  "肯德熊": { min: 113, max: 128 },
-  "自動警備系統": { min: 158, max: 173 },
-  "巴洛古": { min: 405, max: 540 },
-  "迪特和洛依": { min: 150, max: 165 },
-  "艾利傑": { min: 118, max: 128 },
-  "奇美拉": { min: 120, max: 135 },
-  "黑輪王": { min: 780, max: 1020 },
-  "雪毛怪人": { min: 45, max: 68 },
-  "藍色蘑菇王": { min: 720, max: 1880 },
-  "瘋狂喵z客": { min: 120, max: 420 },
-  "噴火龍": { min: 20, max: 60 },
-  "格瑞芬多": { min: 20, max: 60 },
-  "海怒斯": { min: 180, max: 300 },
-  "寒霜冰龍": { min: 240, max: 720 },
-  "多多": { min: 45, max: 315 },
-  "利里諾斯": { min: 45, max: 315 },
-  "萊伊卡": { min: 45, max: 315 }
-};
-
-// ==============================
-// 執行中資料
-// 野王與未找到紀錄會同步到 Google Sheets，Bot 重啟後會重新載入
-// selectedBoss 只屬於當下操作狀態，不需要永久保存
-// ==============================
-
-const bossRecords = new Map();
-const searchRecords = [];
-const selectedBoss = new Map();
-const userChannels = new Map();
-
-
-// ==============================
-// Google Sheets 持久化
-// ==============================
-
-function toIso(timestamp) {
-  if (!timestamp) return "";
-  return new Date(timestamp).toISOString();
+function random(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function fromSheetTime(value) {
-  if (!value) return 0;
-
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+function pick(list) {
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-async function appendBossSheetRow({
-  guildId,
-  bossName,
-  channelNumber,
-  status,
-  reportTime,
-  earliest = "",
-  latest = "",
-  userId
-}) {
-  if (
-    !SHEET_ID ||
-    !GOOGLE_CLIENT_EMAIL ||
-    !GOOGLE_PRIVATE_KEY
-  ) {
-    console.warn(
-      "⚠️ 野王紀錄未寫入 Google Sheets：缺少 Google 環境變數"
-    );
-    return;
-  }
+const fortunes = [
+  "🌈 天選之人",
+  "✨ 超級大吉",
+  "🍀 大吉",
+  "😊 吉",
+  "🙂 小吉",
+  "😐 普通",
+  "😵 凶",
+  "💀 大凶"
+];
 
-  await bossSheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID,
-    range: `'${BOSS_SHEET_NAME}'!A:H`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: {
-      values: [[
-        String(guildId),
-        bossName,
-        String(channelNumber),
-        status,
-        toIso(reportTime),
-        earliest ? toIso(earliest) : "",
-        latest ? toIso(latest) : "",
-        String(userId)
-      ]]
-    }
+const adviceList = [
+  "今天適合打王、刷寶，掉寶運不錯可以多試幾場。",
+  "今天衝裝可以小試手氣，但不建議梭哈。",
+  "今天適合農材料、存楓幣，穩穩賺比較安心。",
+  "今天適合逛拍賣，可能會看到意外便宜貨。",
+  "今天建議先解每日，等手感順了再打王。",
+  "今天適合開箱或轉蛋，但記得見好就收。",
+  "今天不太適合硬衝裝，先把錢留著比較安全。",
+  "今天適合找公會成員一起打王，歐氣比較容易聚集。"
+];
+
+const poemList = [
+  "時來運轉，順勢而行。",
+  "小心為上，莫貪一時。",
+  "今日有光，宜進不宜退。",
+  "運藏冷門，福在遠方。",
+  "守得雲開見月明。",
+  "穩中求勝，方能長久。",
+  "歐氣將至，請保持冷靜。",
+  "今日若順，可乘勢而上。"
+];
+
+const oracleList = [
+  "出貨請截圖，否則視為幻想。",
+  "衝過神裝者，歡迎自願分紅散播歐氣。",
+  "打到好寶請至公會頻道繳交炫耀稅。",
+  "今日歐氣來自公會祝福，發財別忘了大家。",
+  "神裝出世，公會全體有圍觀權。",
+  "今日若出貨，請記得請公會喝個水。",
+  "本公會不強制分紅，但歡迎自願樂捐。",
+  "歐洲人請自重，非洲人請明日再戰。"
+];
+
+function createFortuneEmbed(user, member, fortune) {
+  const drop = random(1, 100);
+  const enhance = random(1, 100);
+  const boss = random(1, 100);
+  const gacha = random(1, 100);
+  const channel = random(1, 2500);
+  const luckyScore = random(1, 100);
+
+ 
+  const advice = pick(adviceList);
+  const poem = pick(poemList);
+  const oracle = pick(oracleList);
+
+  const fortuneColors = {
+    "🌈 天選之人": "#FFD700",
+    "✨ 超級大吉": "#F1C40F",
+    "🍀 大吉": "#2ECC71",
+    "😊 吉": "#3498DB",
+    "🙂 小吉": "#9B59B6",
+    "😐 普通": "#95A5A6",
+    "😵 凶": "#E67E22",
+    "💀 大凶": "#E74C3C"
+  };
+
+  const displayName =
+  levelData[member.guild.id]?.[member.id]?.name ||
+  member.displayName ||
+  member.user.username;
+
+  const avatar = user.displayAvatarURL({
+    extension: "png",
+    size: 512
   });
-}
 
-async function loadBossRecordsFromSheet() {
-  if (
-    !SHEET_ID ||
-    !GOOGLE_CLIENT_EMAIL ||
-    !GOOGLE_PRIVATE_KEY
-  ) {
-    console.warn(
-      "⚠️ 無法載入野王紀錄：缺少 Google 環境變數"
-    );
-    return;
-  }
-
-  const res =
-    await bossSheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `'${BOSS_SHEET_NAME}'!A2:H`
-    });
-
-  const rows = res.data.values || [];
-  const now = Date.now();
-
-  bossRecords.clear();
-  searchRecords.length = 0;
-
-  for (const row of rows) {
-    const [
-      guildId,
-      bossName,
-      channelText,
-      status,
-      reportTimeText,
-      earliestText,
-      latestText,
-      userId
-    ] = row;
-
-    if (
-      !guildId ||
-      !bossName ||
-      !channelText ||
-      !status
-    ) {
-      continue;
-    }
-
-    const channelNumber = Number(channelText);
-    const reportTime =
-      fromSheetTime(reportTimeText);
-
-    if (
-      !Number.isFinite(channelNumber) ||
-      channelNumber < 1 ||
-      channelNumber > 2500 ||
-      !reportTime
-    ) {
-      continue;
-    }
-
-    // 順便恢復每位成員最後使用的 CH
-    if (userId) {
-      setUserChannel(
-        guildId,
-        userId,
-        channelNumber
-      );
-    }
-
-    if (status === "擊殺") {
-      const earliest =
-        fromSheetTime(earliestText);
-      const latest =
-        fromSheetTime(latestText);
-
-      if (!earliest || !latest) {
-        continue;
-      }
-
-      // 已超過「最晚重生 + 2 小時」的歷史紀錄只留在試算表，
-      // 不重新放回 Discord 的即時追蹤清單。
-      if (
-        now >
-        latest + 2 * 60 * 60 * 1000
-      ) {
-        continue;
-      }
-
-      const recordKey =
-        `${guildId}:${bossName}:${channelNumber}`;
-
-      bossRecords.set(recordKey, {
-        guildId,
-        bossName,
-        channelNumber,
-        killedAt: reportTime,
-        earliest,
-        latest,
-        userId: userId || "",
-        // 重啟後依目前時間恢復提醒狀態，避免舊提醒大量重複。
-        preReminderSent:
-          now >= earliest,
-        spawnReminderSent:
-          now >= latest
-      });
-    }
-
-    if (status === "未找到") {
-      searchRecords.push({
-        guildId,
-        bossName,
-        channelNumber,
-        time: reportTime,
-        userId: userId || ""
-      });
-
-      if (searchRecords.length > 200) {
-        searchRecords.shift();
-      }
-    }
-  }
-
-  console.log(
-    `✅ 已從 Google Sheets 載入野王資料：` +
-    `${bossRecords.size} 筆追蹤、` +
-    `${searchRecords.length} 筆未找到`
-  );
-}
-
-// ==============================
-// 時間工具
-// ==============================
-
-function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
-}
-
-// ==============================
-// 取得使用者目前 CH
-// ==============================
-
-function getUserChannel(guildId, userId) {
-  return userChannels.get(`${guildId}:${userId}`);
-}
-
-function setUserChannel(guildId, userId, channelNumber) {
-  userChannels.set(`${guildId}:${userId}`, channelNumber);
-}
-
-// ==============================
-// 建立面板
-// ==============================
-
-function createBossPanel() {
-  const embed = new EmbedBuilder()
-    .setColor("#E67E22")
-    .setTitle("👑 EtheReal 野王追蹤")
+  return new EmbedBuilder()
+    .setColor(fortuneColors[fortune] || "#9B59FF")
+    .setAuthor({
+      name: `${displayName} 的占卜結果`,
+      iconURL: avatar
+    })
+    .setTitle("🍀今日運勢")
     .setDescription(
-      "操作順序：**選野王 → 選 CH → 回報結果**。\n\n" +
-      "選完 CH 後，這個面板會直接切換成：\n" +
-      "**☠️ 已擊殺 / ❌ 未找到**\n\n" +
-      "不會再另外跳出新的操作訊息。\n" +
-      "📋 **查看紀錄**：查看目前野王情報"
+      `**${fortune}**\n⭐ 幸運指數：**${luckyScore}/100**`
+    )
+    .setThumbnail(avatar)
+    .addFields(
+      {
+        name: "💰 掉寶運",
+        value: `${drop}%`,
+        inline: true
+      },
+      {
+        name: "⚒️ 衝裝運",
+        value: `${enhance}%`,
+        inline: true
+      },
+      {
+        name: "👹 打王運",
+        value: `${boss}%`,
+        inline: true
+      },
+      {
+        name: "🎲 轉蛋運",
+        value: `${gacha}%`,
+        inline: true
+      },
+      {
+        name: "📡 幸運頻道",
+        value: `CH ${channel}`,
+        inline: true
+      },
+      {
+        name: "⭐ 歐氣值",
+        value: `${luckyScore}/100`,
+        inline: true
+      },
+      {
+        name: "🥠 今日籤詩",
+        value: poem,
+        inline: false
+      },
+      {
+        name: "📜 今日建議",
+        value: advice,
+        inline: false
+      },
+      {
+        name: "💸 公會神諭",
+        value: oracle,
+        inline: false
+      }
     )
     .setFooter({
-      text: "EtheReal｜野王追蹤系統"
-    });
-
-  const bossNames = Object.keys(WILD_BOSSES);
-  const components = [];
-
-  for (let i = 0; i < bossNames.length; i += 25) {
-    components.push(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`boss_select_${i}`)
-          .setPlaceholder(
-            i === 0 ? "👑 選擇野王" : "👑 更多野王"
-          )
-          .addOptions(
-            bossNames.slice(i, i + 25).map(name => ({
-              label: name,
-              value: name
-            }))
-          )
-      )
-    );
-  }
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("boss_killed")
-        .setLabel("已擊殺")
-        .setEmoji("☠️")
-        .setStyle(ButtonStyle.Danger),
-
-      new ButtonBuilder()
-        .setCustomId("boss_not_found")
-        .setLabel("未找到")
-        .setEmoji("❌")
-        .setStyle(ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId("boss_change_channel")
-        .setLabel("更換 CH")
-        .setEmoji("🔢")
-        .setStyle(ButtonStyle.Primary),
-
-      new ButtonBuilder()
-        .setCustomId("boss_view")
-        .setLabel("查看紀錄")
-        .setEmoji("📋")
-        .setStyle(ButtonStyle.Success)
-    )
-  );
-
-  return {
-    embeds: [embed],
-    components
-  };
+      text: "占卜內容僅供娛樂參考｜祝各位天天出貨 🍁"
+    })
+    .setTimestamp();
 }
 
-
-function createActivePanel(bossName, channelNumber) {
-  const embed = new EmbedBuilder()
-    .setColor("#E67E22")
-    .setTitle("👑 EtheReal 野王追蹤")
-    .setDescription(
-      `👑 目前野王：**${bossName}**\n` +
-      `📡 目前 CH：**${channelNumber}**\n\n` +
-      "請直接選擇搜尋結果。"
-    )
-    .setFooter({
-      text: "EtheReal｜野王追蹤系統"
-    });
-
-  return {
-    embeds: [embed],
-    components: [
-      createQuickActionRow()
-    ]
-  };
-}
-
-
-function createQuickActionRow() {
+function createButtonRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("boss_killed")
-      .setLabel("已擊殺")
-      .setEmoji("☠️")
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId("boss_not_found")
-      .setLabel("未找到")
-      .setEmoji("❌")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("boss_change_boss")
-      .setLabel("換王")
-      .setEmoji("🔄")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("boss_change_channel")
-      .setLabel("換 CH")
-      .setEmoji("🔢")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("boss_view")
-      .setLabel("紀錄")
-      .setEmoji("📋")
+      .setCustomId("draw_fortune")
+      .setLabel("🍀 再抽一次")
       .setStyle(ButtonStyle.Success)
   );
 }
 
-// ==============================
-// CH 輸入視窗
-// ==============================
+// ===== 成就系統 =====
 
-function createChannelModal(type, bossName = "", defaultChannel = null) {
-  const modal = new ModalBuilder()
-    .setCustomId(
-      bossName
-        ? `${type}:${bossName}`
-        : type
-    )
-    .setTitle("設定目前 CH");
+async function checkAchievements(message, userData, extra = {}) {
+  const achievementChannel =
+    message.guild.channels.cache.get(ACHIEVEMENT_CHANNEL_ID);
 
-  const input = new TextInputBuilder()
-    .setCustomId("boss_channel")
-    .setLabel("請輸入目前 CH")
-    .setPlaceholder("例如：125")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(4);
+  if (!achievementChannel) return;
 
-  if (defaultChannel) {
-    input.setValue(String(defaultChannel));
-  }
+  const achievements = userData.achievements || [];
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(input)
-  );
+  const achievementList = [
+    { id: "talk50", name: "💬 話癆 I", requirement: 50, reward: 10, type: "messages" },
+    { id: "talk200", name: "💬 話癆 II", requirement: 200, reward: 30, type: "messages" },
+    { id: "talk500", name: "💬 話癆 III", requirement: 500, reward: 100, type: "messages" },
 
-  return modal;
-}
+    { id: "elder", name: "🍁 公會元老", requirement: 20, reward: 50, type: "level", hidden: true },
+    { id: "voiceCamp", name: "🏕️ 語音露營", requirement: 480, reward: 80, type: "singleVoice", hidden: true },
+    { id: "ghost", name: "👻 幽靈成員", reward: 50, type: "ghost", hidden: true },
+    { id: "voiceSleep", name: "🛏️ 語音睡神", requirement: 720, reward: 120, type: "singleVoice", hidden: true },
+{ id: "voiceMonster", name: "🎙️ 語音狂魔", requirement: 30000, reward: 200, type: "voiceMinutes", hidden: true },
+{ id: "legend", name: "🌈 傳說冒險者", requirement: 50, reward: 300, type: "level", hidden: true },
+{ id: "voice50", name: "🎧 語音常客 I", requirement: 3000, reward: 50, type: "voiceMinutes" },
+{ id: "voice200", name: "🎧 語音常客 II", requirement: 12000, reward: 100, type: "voiceMinutes" },
+{ id: "voice500", name: "🎧 語音常客 III", requirement: 30000, reward: 200, type: "voiceMinutes" },
+{ id: "voice1000", name: "📻 公會電台", requirement: 60000, reward: 500, type: "voiceMinutes", hidden: true },
+    { id: "nightOwl", name: "🌙 夜貓子", requirement: 100, reward: 100, type: "nightMessages", hidden: true },
+{ id: "earlyBird", name: "☀️ 早鳥", requirement: 50, reward: 80, type: "morningMessages", hidden: true },
+{ id: "luckyGod", name: "🍀 歐皇降臨", requirement: 3, reward: 100, type: "luckyCount", hidden: true },
+{ id: "badLuckWarrior", name: "💀 非洲戰神", requirement: 10, reward: 100, type: "badLuckCount", hidden: true },
+    { id: "king1", name: "👑 初登王座", requirement: 1, reward: 100, type: "kingCount" },
+{ id: "king5", name: "🏆 常勝將軍", requirement: 5, reward: 200, type: "kingCount" },
+{ id: "king20", name: "🌟 活躍之神", requirement: 20, reward: 500, type: "kingCount", hidden: true }
+    
+    
+  ];
 
-// ==============================
-// 啟動
-// ==============================
+  for (const achievement of achievementList) {
+    let completed = false;
 
-function setupBossTracker(client) {
-
-  // Bot 上線後從 Google Sheets 恢復野王紀錄
-  const loadBossData = async () => {
-    try {
-      await loadBossRecordsFromSheet();
-    } catch (error) {
-      console.error(
-        "❌ Google Sheets 野王紀錄載入失敗：",
-        error
-      );
-    }
-  };
-
-  if (client.isReady()) {
-    loadBossData();
-  } else {
-    client.once("ready", loadBossData);
-  }
-
-
-  // ============================
-  // 所有成員都可以自行叫出野王面板
-  // ============================
-
-  client.on("messageCreate", async message => {
-    if (message.author.bot) return;
-    if (!message.guild) return;
-
-    if (message.content.trim() !== "-野王") {
-      return;
+    if (achievement.type === "messages") {
+      completed = userData.messages >= achievement.requirement;
     }
 
-    await message.channel.send(
-      createBossPanel()
-    );
+    if (achievement.type === "level") {
+      completed = getLevel(userData.xp) >= achievement.requirement;
+    }
 
-    // 有刪除訊息權限時，自動刪掉成員輸入的 -野王
-    await message.delete().catch(() => {});
-  });
+    if (achievement.type === "singleVoice") {
+      completed = (extra.singleVoiceMinutes || 0) >= achievement.requirement;
+    }
 
-  // ============================
-  // Interaction
-  // ============================
-
-  client.on("interactionCreate", async interaction => {
-    try {
-
-      if (!interaction.guild) return;
-
-      // ========================
-      // 選擇野王
-      // 選王後直接選 CH
-      // ========================
-
-      if (
-        interaction.isStringSelectMenu() &&
-        interaction.customId.startsWith("boss_select_")
-      ) {
-        const bossName = interaction.values[0];
-
-        selectedBoss.set(
-          `${interaction.guild.id}:${interaction.user.id}`,
-          bossName
-        );
-
-        const currentChannel = getUserChannel(
-          interaction.guild.id,
-          interaction.user.id
-        );
-
-        // 選完野王後，立即跳出 CH 輸入視窗。
-        // 如果之前用過，會先帶入上一次的 CH，若沒換頻直接送出即可。
-        await interaction.showModal(
-          createChannelModal(
-            "boss_set_channel_modal",
-            bossName,
-            currentChannel
-          )
-        );
-
-        return;
-      }
-
-      // ========================
-// 換王
-// ========================
-
-if (
-  interaction.isButton() &&
-  interaction.customId === "boss_change_boss"
-) {
-  const key =
-    `${interaction.guild.id}:${interaction.user.id}`;
-
-  selectedBoss.delete(key);
-
-  await interaction.update(
-    createBossPanel()
-  );
-
-  return;
+    if (achievement.type === "ghost") {
+      completed =
+        (userData.voiceMinutes || 0) >= 1200 &&
+        (userData.messages || 0) <= 20;
+    }
+    if (achievement.type === "voiceMinutes") {
+  completed =
+    (userData.voiceMinutes || 0) >= achievement.requirement;
+}
+    if (achievement.type === "nightMessages") {
+  completed = (userData.nightMessages || 0) >= achievement.requirement;
 }
 
-      // ========================
-      // 更換 CH
-      // ========================
+if (achievement.type === "morningMessages") {
+  completed = (userData.morningMessages || 0) >= achievement.requirement;
+}
 
-      if (
-        interaction.isButton() &&
-        interaction.customId === "boss_change_channel"
-      ) {
-        const currentChannel =
-          getUserChannel(
-            interaction.guild.id,
-            interaction.user.id
-          );
+if (achievement.type === "luckyCount") {
+  completed = (userData.luckyCount || 0) >= achievement.requirement;
+}
 
-        await interaction.showModal(
-          createChannelModal(
-            "boss_change_channel_modal",
-            "",
-            currentChannel
-          )
-        );
-        return;
-      }
+if (achievement.type === "badLuckCount") {
+  completed = (userData.badLuckCount || 0) >= achievement.requirement;
+}
+    if (achievement.type === "kingCount") {
+  completed =
+    (userData.kingCount || 0) >= achievement.requirement;
+}
 
-      // ========================
-      // 已擊殺
-      // ========================
+    if (completed && !achievements.includes(achievement.id)) {
+      achievements.push(achievement.id);
+      userData.xp += achievement.reward;
 
-      if (
-        interaction.isButton() &&
-        interaction.customId === "boss_killed"
-      ) {
-        const key =
-          `${interaction.guild.id}:${interaction.user.id}`;
-
-        const bossName =
-          selectedBoss.get(key);
-
-        if (!bossName) {
-          await interaction.reply({
-            content: "❌ 請先選擇野王。",
-            ephemeral: true
-          });
-          return;
-        }
-
-        const currentChannel =
-          getUserChannel(
-            interaction.guild.id,
-            interaction.user.id
-          );
-
-        if (!currentChannel) {
-          await interaction.showModal(
-            createChannelModal(
-              "boss_killed_modal",
-              bossName
-            )
-          );
-          return;
-        }
-
-        await saveKillRecord(
-          interaction,
-          bossName,
-          currentChannel
-        );
-
-        return;
-      }
-
-      // ========================
-      // 未找到
-      // ========================
-
-      if (
-        interaction.isButton() &&
-        interaction.customId === "boss_not_found"
-      ) {
-        const key =
-          `${interaction.guild.id}:${interaction.user.id}`;
-
-        const bossName =
-          selectedBoss.get(key);
-
-        if (!bossName) {
-          await interaction.reply({
-            content: "❌ 請先選擇野王。",
-            ephemeral: true
-          });
-          return;
-        }
-
-        const currentChannel =
-          getUserChannel(
-            interaction.guild.id,
-            interaction.user.id
-          );
-
-        if (!currentChannel) {
-          await interaction.showModal(
-            createChannelModal(
-              "boss_not_found_modal",
-              bossName
-            )
-          );
-          return;
-        }
-
-        await saveNotFoundRecord(
-          interaction,
-          bossName,
-          currentChannel
-        );
-
-        return;
-      }
-
-      // ========================
-      // 選王後設定 CH Modal
-      // 直接更新原本面板，不另外新增操作訊息
-      // ========================
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId.startsWith(
-          "boss_set_channel_modal:"
+      const embed = new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle("🏆 成就解鎖")
+        .setDescription(
+          `🎉 **${userData.name}** 解鎖成就！\n\n` +
+          `${achievement.name}\n\n` +
+          `🎁 獲得獎勵：+${achievement.reward} XP`
         )
-      ) {
-        const bossName =
-          interaction.customId.split(":")[1];
+        .setTimestamp();
 
-        const channelNumber =
-          parseChannelNumber(interaction);
-
-        if (!channelNumber) return;
-
-        selectedBoss.set(
-          `${interaction.guild.id}:${interaction.user.id}`,
-          bossName
-        );
-
-        setUserChannel(
-          interaction.guild.id,
-          interaction.user.id,
-          channelNumber
-        );
-
-        await interaction.update(
-          createActivePanel(
-            bossName,
-            channelNumber
-          )
-        );
-
-        return;
-      }
-
-      // ========================
-      // 更換 CH Modal
-      // 直接更新原本面板
-      // ========================
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId ===
-          "boss_change_channel_modal"
-      ) {
-        const channelNumber =
-          parseChannelNumber(interaction);
-
-        if (!channelNumber) return;
-
-        const key =
-          `${interaction.guild.id}:${interaction.user.id}`;
-
-        const bossName =
-          selectedBoss.get(key);
-
-        setUserChannel(
-          interaction.guild.id,
-          interaction.user.id,
-          channelNumber
-        );
-
-        if (bossName) {
-          await interaction.update(
-            createActivePanel(
-              bossName,
-              channelNumber
-            )
-          );
-        } else {
-          await interaction.reply({
-            content:
-              `✅ 已切換到 CH ${channelNumber}，請先選擇野王。`,
-            ephemeral: true
-          });
-        }
-
-        return;
-      }
-
-      // ========================
-      // 第一次擊殺輸入 CH
-      // ========================
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId.startsWith(
-          "boss_killed_modal:"
-        )
-      ) {
-        const bossName =
-          interaction.customId.split(":")[1];
-
-        const channelNumber =
-          parseChannelNumber(interaction);
-
-        if (!channelNumber) return;
-
-        setUserChannel(
-          interaction.guild.id,
-          interaction.user.id,
-          channelNumber
-        );
-
-        await saveKillRecord(
-          interaction,
-          bossName,
-          channelNumber
-        );
-
-        return;
-      }
-
-      // ========================
-      // 第一次未找到輸入 CH
-      // ========================
-
-      if (
-        interaction.isModalSubmit() &&
-        interaction.customId.startsWith(
-          "boss_not_found_modal:"
-        )
-      ) {
-        const bossName =
-          interaction.customId.split(":")[1];
-
-        const channelNumber =
-          parseChannelNumber(interaction);
-
-        if (!channelNumber) return;
-
-        setUserChannel(
-          interaction.guild.id,
-          interaction.user.id,
-          channelNumber
-        );
-
-        await saveNotFoundRecord(
-          interaction,
-          bossName,
-          channelNumber
-        );
-
-        return;
-      }
-
-      // ========================
-      // 查看紀錄
-      // ========================
-
-      if (
-        interaction.isButton() &&
-        interaction.customId === "boss_view"
-      ) {
-        const guildId =
-          interaction.guild.id;
-
-        const kills =
-          [...bossRecords.values()]
-            .filter(
-              record =>
-                record.guildId === guildId
-            )
-            .sort(
-              (a, b) =>
-                a.earliest - b.earliest
-            );
-
-        const searches =
-          searchRecords
-            .filter(
-              record =>
-                record.guildId === guildId
-            )
-            .slice(-10)
-            .reverse();
-
-        let description = "";
-
-        if (kills.length > 0) {
-          description +=
-            "### ☠️ 擊殺 / 重生紀錄\n";
-
-          description +=
-            kills
-              .slice(0, 15)
-              .map(record =>
-                `**${record.bossName}**｜CH ${record.channelNumber}\n` +
-                `🌱 ${formatTime(record.earliest)} ～ ${formatTime(record.latest)}`
-              )
-              .join("\n\n");
-        }
-
-        if (searches.length > 0) {
-          if (description) {
-            description += "\n\n";
-          }
-
-          description +=
-            "### ❌ 最近未找到\n";
-
-          description +=
-            searches
-              .map(record =>
-                `**${record.bossName}**｜CH ${record.channelNumber}｜${formatTime(record.time)}`
-              )
-              .join("\n");
-        }
-
-        if (!description) {
-          description =
-            "目前還沒有任何野王紀錄。";
-        }
-
-        await interaction.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor("#3498DB")
-              .setTitle("📋 野王追蹤紀錄")
-              .setDescription(
-                description.slice(0, 4000)
-              )
-          ],
-          ephemeral: true
-        });
-
-        return;
-      }
-
-    } catch (error) {
-      console.error(
-        "❌ 野王系統錯誤：",
-        error
-      );
-
-      if (
-        interaction.isRepliable() &&
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
-        await interaction.reply({
-          content:
-            "❌ 野王系統發生錯誤，請稍後再試。",
-          ephemeral: true
-        }).catch(() => {});
-      }
+      await achievementChannel.send({
+        embeds: [embed]
+      });
     }
-  });
+  }
 
-  // ============================
-  // 每分鐘檢查提醒
-  // ============================
-
-  setInterval(async () => {
-    const now = Date.now();
-
-    for (const [key, record] of bossRecords) {
-
-      const guild =
-        client.guilds.cache.get(
-          record.guildId
-        );
-
-      if (!guild) continue;
-
-      const channel =
-        guild.channels.cache.get(
-          BOSS_CHANNEL_ID
-        );
-
-      if (!channel?.isTextBased()) {
-        continue;
-      }
-
-      // 最早重生前 10 分鐘
-      if (
-        !record.preReminderSent &&
-        now >=
-          record.earliest -
-          10 * 60 * 1000 &&
-        now < record.earliest
-      ) {
-        record.preReminderSent = true;
-
-        await channel.send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor("#F1C40F")
-              .setTitle(
-                `🔔 ${record.bossName} 即將重生`
-              )
-              .setDescription(
-                `📡 **CH ${record.channelNumber}**\n\n` +
-                `🌱 最早重生：**${formatTime(record.earliest)}**\n` +
-                `⏰ 最晚重生：**${formatTime(record.latest)}**\n\n` +
-                "距離最早重生約 10 分鐘。"
-              )
-          ]
-        });
-      }
-
-      // 進入重生區間
-      if (
-        !record.spawnReminderSent &&
-        now >= record.earliest
-      ) {
-        record.spawnReminderSent = true;
-
-        await channel.send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor("#E74C3C")
-              .setTitle(
-                `🚨 ${record.bossName} 已進入重生區間`
-              )
-              .setDescription(
-                `📡 **CH ${record.channelNumber}**\n\n` +
-                `🌱 最早：**${formatTime(record.earliest)}**\n` +
-                `⏰ 最晚：**${formatTime(record.latest)}**\n\n` +
-                "可以開始找王了！"
-              )
-          ]
-        });
-      }
-
-      // 最晚重生後 2 小時清除
-      if (
-        now >
-        record.latest +
-        2 * 60 * 60 * 1000
-      ) {
-        bossRecords.delete(key);
-      }
-    }
-
-  }, 60 * 1000);
+  userData.achievements = achievements;
 }
 
-// ==============================
-// 驗證 CH
-// ==============================
 
-function parseChannelNumber(interaction) {
-  const text =
-    interaction.fields
-      .getTextInputValue("boss_channel")
-      .trim();
+client.once("ready", async () => {
+  console.log(`✅ ${client.user.tag} 已上線`);
 
-  if (!/^\d{1,4}$/.test(text)) {
-    interaction.reply({
-      content:
-        "❌ CH 請只輸入數字，例如：125",
-      ephemeral: true
-    }).catch(() => {});
-
-    return null;
-  }
-
-  const channelNumber = Number(text);
-
-  if (
-    channelNumber < 1 ||
-    channelNumber > 2500
-  ) {
-    interaction.reply({
-      content:
-        "❌ CH 請輸入 1～2500。",
-      ephemeral: true
-    }).catch(() => {});
-
-    return null;
-  }
-
-  return channelNumber;
-}
-
-// ==============================
-// 儲存擊殺
-// ==============================
-
-async function saveKillRecord(
-  interaction,
-  bossName,
-  channelNumber
-) {
-  const config =
-    WILD_BOSSES[bossName];
-
-  if (!config) {
-    await interaction.reply({
-      content:
-        "❌ 找不到這隻野王資料。",
-      ephemeral: true
-    });
-    return;
-  }
-
-  const killedAt = Date.now();
-
-  const earliest =
-    killedAt +
-    config.min * 60 * 1000;
-
-  const latest =
-    killedAt +
-    config.max * 60 * 1000;
-
-  const recordKey =
-    `${interaction.guild.id}:${bossName}:${channelNumber}`;
-
-  bossRecords.set(recordKey, {
-    guildId: interaction.guild.id,
-    bossName,
-    channelNumber,
-    killedAt,
-    earliest,
-    latest,
-    userId: interaction.user.id,
-    preReminderSent: false,
-    spawnReminderSent: false
-  });
-
-  // 永久保存到 Google Sheets
   try {
-    await appendBossSheetRow({
-      guildId: interaction.guild.id,
-      bossName,
-      channelNumber,
-      status: "擊殺",
-      reportTime: killedAt,
-      earliest,
-      latest,
-      userId: interaction.user.id
-    });
-  } catch (error) {
-    console.error(
-      "❌ 擊殺紀錄寫入 Google Sheets 失敗：",
-      error
-    );
+    await loadLevelsFromSheet();
+  } catch (err) {
+    console.error("Google Sheets 載入失敗：", err);
+  }
+});
+
+// ===== 每日活躍王結算 =====
+cron.schedule("0 0 * * *", async () => {
+  console.log("👑 開始每日活躍王結算");
+
+  for (const [guildId, users] of Object.entries(levelData)) {
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) continue;
+
+    const ranking = Object.entries(users)
+      .filter(([id, data]) => (data.dailyXp || 0) > 0)
+      .sort((a, b) => (b[1].dailyXp || 0) - (a[1].dailyXp || 0));
+
+    if (ranking.length === 0) continue;
+
+    const [winnerId, winnerData] = ranking[0];
+    const top3 = ranking.slice(0, 3);
+
+const top3Text = top3
+  .map(([id, data], index) => {
+    const medal =
+      index === 0 ? "🥇" :
+      index === 1 ? "🥈" :
+      "🥉";
+
+    return `${medal} **${data.name}** ｜ ${data.dailyXp} XP`;
+  })
+  .join("\n");
+
+    const isFirstKing = (winnerData.kingCount || 0) === 0;
+    const reward = isFirstKing ? 200 : 50;
+
+    winnerData.xp = (winnerData.xp || 0) + reward;
+    winnerData.kingCount = (winnerData.kingCount || 0) + 1;
+   await checkAchievements(
+  {
+    guild
+  },
+  winnerData
+);
+
+    const channel = guild.channels.cache.get(LEVEL_CHANNEL_ID);
+
+    if (channel) {
+      await channel.send({
+        embeds: [
+          new EmbedBuilder()
+           .setColor("#FFD700")
+.setTitle("👑 EtheReal 每日活躍之王")
+.setDescription(
+`${top3Text}\n\n` +
+`🏆 恭喜 **${winnerData.name}** 榮登今日活躍之王！\n\n` +
+`🎁 今日獎勵：+${reward} XP\n` +
+`${isFirstKing
+    ? "🌟 首次登上王座，獲得首登獎勵！"
+    : `👑 累積獲得活躍王：${winnerData.kingCount} 次`
+  }\n\n` +
+`🍁 感謝各位今天為 EtheReal 帶來滿滿活力！`
+)
+.setFooter({
+text: "每日 23:59 自動結算"
+})
+.setTimestamp()
+
+        ]
+      });
+    }
+
+    for (const data of Object.values(users)) {
+      data.dailyXp = 0;
+      data.dailyXpDate = null;
+    }
   }
 
-  // 先更新原本操作面板，不新增新的操作訊息
-  await interaction.update(
-    createActivePanel(
-      bossName,
-      channelNumber
-    )
+  try {
+    await saveLevelsToSheet();
+  } catch (err) {
+    console.error("每日活躍王結算儲存失敗：", err);
+  }
+}, {
+  timezone: "Asia/Taipei"
+});
+
+// =====================
+// 新成員加入時紀錄暱稱
+// =====================
+
+client.on("guildMemberAdd", member => {
+  const guildId = member.guild.id;
+  const displayName =
+    member.displayName ||
+    member.user.username;
+
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
+  }
+
+  if (!levelData[guildId][member.id]) {
+    levelData[guildId][member.id] = {
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0,
+  voiceStart: null,
+  voiceXpToday: 0,
+  voiceXpDate: null,
+
+  dailyXp: 0,
+  dailyXpDate: null,
+   kingCount: 0,
+
+  nightMessages: 0,
+  morningMessages: 0,
+  luckyCount: 0,
+  badLuckCount: 0,
+  voiceXpMinutes: 0
+      
+};
+  } else {
+    levelData[guildId][member.id].name = displayName;
+  }
+
+  saveLevelData();
+});
+// =====================
+// 成員改暱稱時更新
+// =====================
+
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  const displayName =
+    newMember.displayName ||
+    newMember.user.username;
+
+  const guildId = newMember.guild.id;
+
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
+  }
+
+  if (!levelData[guildId][newMember.id]) {
+    levelData[guildId][newMember.id] = {
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0,
+voiceStart: null,
+      voiceXpToday: 0,
+  voiceXpDate: null,
+      nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0,
+      voiceXpMinutes: 0
+};
+  } else {
+    levelData[guildId][newMember.id].name = displayName;
+  }
+
+  saveLevelData();
+
+  try {
+    await saveLevelsToSheet();
+  } catch (err) {
+    console.error("暱稱更新儲存失敗：", err);
+  }
+});
+
+client.on("messageCreate", async message => {
+console.log("收到訊息：", message.content);
+  console.log(
+    `[XP] ${message.guild?.name} | #${message.channel.name} | ${message.author.username}`
   );
 
-  // 頻道只新增真正的紀錄
-  await interaction.channel.send({
+  console.log(
+    `[XP CHECK] ${message.channel.name} (${message.channel.id})`
+  );
+
+  if (message.author.bot) return;
+  if (!message.guild) return;
+
+  const guildId = message.guild.id;
+const userId = message.author.id;
+const displayName = message.member?.displayName || message.author.username;
+
+if (!levelData[guildId]) {
+  levelData[guildId] = {};
+}
+
+if (!levelData[guildId][userId]) {
+  levelData[guildId][userId] = {
+  xp: 0,
+  name: displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0,
+voiceStart: null,
+    voiceXpToday: 0,
+  voiceXpDate: null,
+    nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0,
+    voiceXpMinutes: 0
+};
+}
+
+const userData = levelData[guildId][userId];
+
+  if (!IGNORED_XP_CHANNELS.includes(message.channel.id)) {
+
+  const now = Date.now();
+  const lastXpTime = xpCooldown.get(userId) || 0;
+  const cooldown = 30 * 1000;
+
+  if (now - lastXpTime >= cooldown) {
+
+    const oldLevel = getLevel(userData.xp);
+
+const today = new Date().toLocaleDateString("zh-TW", {
+  timeZone: "Asia/Taipei"
+});
+
+if (userData.dailyXpDate !== today) {
+  userData.dailyXpDate = today;
+  userData.dailyXp = 0;
+}
+
+userData.xp += 1;
+userData.dailyXp = (userData.dailyXp || 0) + 1;
+
+userData.name = displayName;
+userData.messages = (userData.messages || 0) + 1;
+    const hour = Number(
+  new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    hour12: false
+  })
+);
+
+if (hour >= 1 && hour < 5) {
+  userData.nightMessages = (userData.nightMessages || 0) + 1;
+}
+
+if (hour >= 6 && hour < 9) {
+  userData.morningMessages = (userData.morningMessages || 0) + 1;
+}
+await checkAchievements(message, userData);
+const newLevel = getLevel(userData.xp);
+
+xpCooldown.set(userId, now);
+
+saveLevelData();
+
+try {
+  await saveLevelsToSheet();
+} catch (err) {
+  console.error("Google Sheets 儲存失敗：", err);
+}
+    if (newLevel > oldLevel) {
+
+      const levelUpEmbed = new EmbedBuilder()
+        .setColor("#F1C40F")
+        .setTitle("🎉 Level Up！")
+        .setDescription(
+          `恭喜 **${displayName}** 等級提升！\n\n` +
+          `🏅 Lv.${oldLevel} ➜ **Lv.${newLevel}**\n\n` +
+          `🍁 繼續保持活躍，一起讓 EtheReal 更熱鬧！`
+        )
+        .setThumbnail(
+          message.author.displayAvatarURL({
+            extension: "png",
+            size: 256
+          })
+        )
+        .setFooter({
+          text: "EtheReal 活躍等級系統"
+        })
+        .setTimestamp();
+
+      const levelChannel =
+  message.guild.channels.cache.get(LEVEL_CHANNEL_ID);
+
+if (levelChannel) {
+  await levelChannel.send({
+    embeds: [levelUpEmbed]
+  });
+    }
+  }
+}
+}
+  if (message.content.trim() === "-等級") {
+  const xp = userData.xp;
+  const level = getLevel(xp);
+    const title = getTitle(level);
+
+  const currentLevelXp = level * level * 5;
+  const nextLevelXp = getRequiredXp(level);
+  const progressXp = xp - currentLevelXp;
+  const requiredXp = nextLevelXp - currentLevelXp;
+  const percent = Math.min(
+  Math.floor((progressXp / requiredXp) * 100),
+  100
+);
+  const expBar = createExpBar(progressXp, requiredXp);
+
+  return message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor("#57F287")
-        .setTitle(
-          `☠️ ${bossName} 已擊殺`
-        )
+        .setColor("#9B59FF")
+        .setTitle(`📊 ${displayName} 的冒險紀錄`)
+        .addFields(
+  {
+    name: "🏅 等級",
+    value: `Lv.${level}`,
+    inline: true
+  },
+          {
+  name: "🎖 稱號",
+  value: title,
+  inline: true
+},
+  {
+    name: "🔥 活躍值",
+    value: `${xp}`,
+    inline: true
+  },
+  {
+    name: "💬 發言次數",
+    value: `${userData.messages || 0}`,
+    inline: true
+  },
+  {
+    name: "🏆 成就",
+    value: `${userData.achievements?.length || 0} 個`,
+    inline: true
+  },
+          {
+  name: "🎧 語音時數",
+  value: `${((userData.voiceMinutes || 0) / 60).toFixed(1)} 小時`,
+  inline: true
+},
+  {
+    name: "⭐ 經驗條",
+    value: `${expBar} ${percent}%\n${progressXp}/${requiredXp}`,
+    inline: false
+  }
+)
+        .setThumbnail(message.author.displayAvatarURL({ extension: "png", size: 256 }))
+        .setFooter({ text: "EtheReal 活躍等級系統" })
+        .setTimestamp()
+    ]
+  });
+}
+  if (message.content.trim() === "-個人資料") {
+
+  const level = getLevel(userData.xp || 0);
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#2ECC71")
+        .setTitle(`🍁 ${displayName} 個人資料`)
         .addFields(
           {
-            name: "📡 CH",
-            value: `${channelNumber}`,
+            name: "🏅 等級",
+            value: `Lv.${level}`,
             inline: true
           },
           {
-            name: "☠️ 擊殺",
-            value: formatTime(killedAt),
+            name: "🎖 稱號",
+            value: getTitle(level),
             inline: true
           },
           {
-            name: "🌱 最早重生",
-            value: formatTime(earliest),
-            inline: false
+            name: "🔥 活躍值",
+            value: `${userData.xp || 0}`,
+            inline: true
           },
           {
-            name: "⏰ 最晚重生",
-            value: formatTime(latest),
-            inline: false
+            name: "💬 發言次數",
+            value: `${userData.messages || 0}`,
+            inline: true
           },
           {
-            name: "👤 回報",
-            value: `${interaction.user}`,
+            name: "🎧 語音時數",
+            value: `${((userData.voiceMinutes || 0) / 60).toFixed(1)} 小時`,
+            inline: true
+          },
+          {
+            name: "👑 活躍王次數",
+            value: `${userData.kingCount || 0} 次`,
+            inline: true
+          },
+          {
+            name: "🏆 已解鎖成就",
+            value: `${userData.achievements?.length || 0} 個`,
+            inline: true
+          },
+          {
+            name: "🌙 夜貓發言",
+            value: `${userData.nightMessages || 0}`,
+            inline: true
+          },
+          {
+            name: "☀️ 早鳥發言",
+            value: `${userData.morningMessages || 0}`,
+            inline: true
+          },
+          {
+            name: "🍀 天選之人",
+            value: `${userData.luckyCount || 0} 次`,
+            inline: true
+          },
+          {
+            name: "💀 大凶",
+            value: `${userData.badLuckCount || 0} 次`,
             inline: true
           }
         )
+        .setThumbnail(
+          message.author.displayAvatarURL({
+            extension: "png",
+            size: 256
+          })
+        )
+        .setTimestamp()
+    ]
+  });
+}
+  if (message.content.trim() === "-檢查頻道") {
+
+  const channels = message.guild.channels.cache
+    .filter(c => c.isTextBased());
+
+  let result = "";
+
+  channels.forEach(channel => {
+
+    const xpEnabled = !IGNORED_XP_CHANNELS.includes(channel.id);
+
+    result += xpEnabled
+      ? `🟢 ${channel.name}\n`
+      : `🔴 ${channel.name}\n`;
+  });
+
+  return message.reply(result);
+}
+ if (message.content.trim() === "-成就") {
+  const achievements = userData.achievements || [];
+
+  const achievementList = [
+  { id: "talk50", name: "💬 話癆 I" },
+  { id: "talk200", name: "💬 話癆 II" },
+  { id: "talk500", name: "💬 話癆 III" },
+
+  { id: "elder", name: "🍁 公會元老", hidden: true },
+  { id: "voiceCamp", name: "🏕️ 語音露營", hidden: true },
+    { id: "ghost", name: "👻 幽靈成員", hidden: true },
+    { id: "voiceSleep", name: "🛏️ 語音睡神", hidden: true },
+{ id: "voiceMonster", name: "🎙️ 語音狂魔", hidden: true },
+{ id: "legend", name: "🌈 傳說冒險者", hidden: true },
+{ id: "voice50", name: "🎧 語音常客 I" },
+{ id: "voice200", name: "🎧 語音常客 II" },
+{ id: "voice500", name: "🎧 語音常客 III" },
+{ id: "voice1000", name: "📻 公會電台", hidden: true },
+    { id: "nightOwl", name: "🌙 夜貓子", hidden: true },
+{ id: "earlyBird", name: "☀️ 早鳥", hidden: true },
+{ id: "luckyGod", name: "🍀 歐皇降臨", hidden: true },
+{ id: "badLuckWarrior", name: "💀 非洲戰神", hidden: true },
+    { id: "king1", name: "👑 初登王座" },
+{ id: "king5", name: "🏆 常勝將軍" },
+{ id: "king20", name: "🌟 活躍之神", hidden: true }
+    
+];
+
+  const text = achievementList
+  .map(a => {
+
+    if (achievements.includes(a.id)) {
+      return `✅ ${a.name}`;
+    }
+
+    if (a.hidden) {
+      return `❓ 未知成就`;
+    }
+
+    if (a.id === "talk50") {
+  return `⬜ ${a.name} (${userData.messages || 0}/50)`;
+}
+
+if (a.id === "talk200") {
+  return `⬜ ${a.name} (${userData.messages || 0}/200)`;
+}
+
+if (a.id === "talk500") {
+  return `⬜ ${a.name} (${userData.messages || 0}/500)`;
+}
+
+if (a.id === "voice50") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/3000)`;
+}
+
+if (a.id === "voice200") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/12000)`;
+}
+
+if (a.id === "voice500") {
+  return `⬜ ${a.name} (${userData.voiceMinutes || 0}/30000)`;
+}
+
+return `⬜ ${a.name}`;
+  })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle(`🏆 ${displayName} 的成就`)
+        .setDescription(text)
+        .addFields({
+          name: "📊 進度",
+          value: `${achievements.length} / ${achievementList.length} 已解鎖`
+        })
+        .setTimestamp()
     ]
   });
 }
 
-// ==============================
-// 儲存未找到
-// ==============================
+if (message.content.trim() === "-語音排行") {
+  const guildRanking = levelData[guildId] || {};
 
-async function saveNotFoundRecord(
-  interaction,
-  bossName,
-  channelNumber
-) {
-  const time = Date.now();
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => (b[1].voiceMinutes || 0) - (a[1].voiceMinutes || 0))
+    .slice(0, 10);
 
-  searchRecords.push({
-    guildId: interaction.guild.id,
-    bossName,
-    channelNumber,
-    time,
-    userId: interaction.user.id
-  });
+  const text = ranking
+    .map(([id, data], index) => {
+      const hours = ((data.voiceMinutes || 0) / 60).toFixed(1);
+      return `**${index + 1}. ${data.name}**｜🎧 ${hours} 小時`;
+    })
+    .join("\n");
 
-  // 永久保存到 Google Sheets
-  try {
-    await appendBossSheetRow({
-      guildId: interaction.guild.id,
-      bossName,
-      channelNumber,
-      status: "未找到",
-      reportTime: time,
-      userId: interaction.user.id
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#3498DB")
+        .setTitle("🎧 本伺服器語音排行榜")
+        .setDescription(text || "目前還沒有語音資料")
+        .setFooter({ text: "依照本伺服器語音累積時數統計" })
+        .setTimestamp()
+    ]
     });
-  } catch (error) {
-    console.error(
-      "❌ 未找到紀錄寫入 Google Sheets 失敗：",
-      error
-    );
   }
+  
+  if (message.content.trim() === "-今日排行") {
+  const guildRanking = levelData[guildId] || {};
 
-  // 只保留最近 200 筆
-  if (searchRecords.length > 200) {
-    searchRecords.shift();
-  }
+  const ranking = Object.entries(guildRanking)
+    .filter(([id, data]) => (data.dailyXp || 0) > 0)
+    .sort((a, b) => (b[1].dailyXp || 0) - (a[1].dailyXp || 0))
+    .slice(0, 10);
 
-  // 操作面板留在原位，不再額外跳出操作訊息
-  await interaction.update(
-    createActivePanel(
-      bossName,
-      channelNumber
-    )
-  );
+  const text = ranking
+    .map(([id, data], index) => {
+      const medal =
+        index === 0 ? "🥇" :
+        index === 1 ? "🥈" :
+        index === 2 ? "🥉" :
+        `${index + 1}.`;
 
-  // 未找到只留一行簡短紀錄
-  await interaction.channel.send(
-    `❌ **${bossName}**｜CH ${channelNumber}｜未找到｜${formatTime(time)}｜${interaction.user}`
-  );
+      return `${medal} **${data.name}**｜🔥 ${data.dailyXp || 0} XP`;
+    })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FF9900")
+        .setTitle("🔥 本日活躍排行榜")
+        .setDescription(text || "今天目前還沒有活躍資料")
+        .setFooter({
+          text: "每日 00:00 結算活躍王"
+        })
+        .setTimestamp()
+    ]
+  });
+}
+if (message.content.trim() === "-我的排名") {
+  const guildRanking = levelData[guildId] || {};
+
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => (b[1].xp || 0) - (a[1].xp || 0));
+
+  const myIndex = ranking.findIndex(([id]) => id === userId);
+  const myRank = myIndex + 1;
+
+  const myData = guildRanking[userId];
+
+  const prevData = myIndex > 0 ? ranking[myIndex - 1][1] : null;
+  const topData = ranking[0]?.[1];
+
+  const gapToPrev = prevData
+    ? (prevData.xp || 0) - (myData.xp || 0)
+    : 0;
+
+  const gapToTop = topData
+    ? (topData.xp || 0) - (myData.xp || 0)
+    : 0;
+
+  const rankText =
+    myRank === 1
+      ? "👑 你目前是本伺服器活躍王！"
+      : `距離上一名還差 **${gapToPrev} XP**\n距離第一名還差 **${gapToTop} XP**`;
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle(`🏆 ${displayName} 的排名`)
+        .setDescription(
+          `📍 目前排名：**#${myRank} / ${ranking.length}**\n\n` +
+          `🔥 活躍值：**${myData.xp || 0} XP**\n` +
+          `🏅 等級：**Lv.${getLevel(myData.xp || 0)}**\n\n` +
+          rankText
+        )
+        .setFooter({
+          text: "依照本伺服器總活躍值排名"
+        })
+        .setTimestamp()
+    ]
+  });
+  
+}
+if (message.content.trim() === "-排行榜") {
+  const guildRanking = levelData[guildId] || {};
+
+  const ranking = Object.entries(guildRanking)
+    .sort((a, b) => b[1].xp - a[1].xp)
+    .slice(0, 10);
+
+  const text = ranking
+    .map(([id, data], index) => {
+      return `**${index + 1}. ${data.name}**｜Lv.${getLevel(data.xp)}｜${data.xp} 活躍值`;
+    })
+    .join("\n");
+
+  return message.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#FFD700")
+        .setTitle("🏆 本伺服器 DC 活躍排行榜")
+        .setDescription(text || "目前還沒有排行榜資料")
+        .setFooter({ text: "依照本伺服器 Discord 發言活躍度統計" })
+        .setTimestamp()
+    ]
+  });
 }
 
-module.exports = {
-  setupBossTracker
+if (message.content.trim() === "-占卜") {
+  try {
+    const fortune = pick(fortunes);
+
+    if (fortune === "🌈 天選之人") {
+      userData.luckyCount = (userData.luckyCount || 0) + 1;
+    }
+
+    if (fortune === "💀 大凶") {
+      userData.badLuckCount = (userData.badLuckCount || 0) + 1;
+    }
+
+    const embed = createFortuneEmbed(
+      message.author,
+      message.member,
+      fortune
+    );
+
+    await message.reply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("文字占卜儲存失敗：", err);
+    }
+
+    await checkAchievements(message, userData);
+
+  } catch (err) {
+    console.error("文字占卜錯誤：", err);
+  }
+
+  return;
+}
+
+});
+
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
+  if (interaction.customId !== "draw_fortune") return;
+
+  try {
+    await interaction.deferReply();
+
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    if (!levelData[guildId]) {
+      levelData[guildId] = {};
+    }
+
+    if (!levelData[guildId][userId]) {
+      levelData[guildId][userId] = {
+        xp: 0,
+        name: interaction.member?.displayName || interaction.user.username,
+        messages: 0,
+        achievements: [],
+        voiceMinutes: 0,
+        voiceStart: null,
+        voiceXpToday: 0,
+        voiceXpDate: null,
+        dailyXp: 0,
+        dailyXpDate: null,
+        kingCount: 0,
+        nightMessages: 0,
+        morningMessages: 0,
+        luckyCount: 0,
+        badLuckCount: 0,
+        voiceXpMinutes: 0
+      };
+    }
+
+    const userData = levelData[guildId][userId];
+    const fortune = pick(fortunes);
+
+    if (fortune === "🌈 天選之人") {
+      userData.luckyCount = (userData.luckyCount || 0) + 1;
+    }
+
+    if (fortune === "💀 大凶") {
+      userData.badLuckCount = (userData.badLuckCount || 0) + 1;
+    }
+
+    const embed = createFortuneEmbed(
+      interaction.user,
+      interaction.member,
+      fortune
+    );
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: [createButtonRow()]
+    });
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("按鈕占卜儲存失敗：", err);
+    }
+
+    await checkAchievements(
+      { guild: interaction.guild },
+      userData
+    );
+
+  } catch (err) {
+    console.error("再抽一次按鈕錯誤：", err);
+  }
+});
+
+
+// =====================
+// 成員離開通知
+// =====================
+
+// ===== 頻道設定 =====
+const LEAVE_CHANNEL_ID = "1497601369518116874";       // 管理群
+const LEVEL_CHANNEL_ID = "1515361647722496182";       // 公會紀錄
+const ACHIEVEMENT_CHANNEL_ID = "1515361647722496182"; // 公會紀錄
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  const member = newState.member || oldState.member;
+
+  if (!member || member.user.bot) return;
+
+  const guildId = member.guild.id;
+  const userId = member.id;
+  const key = `${guildId}-${userId}`;
+
+  if (!levelData[guildId]) {
+    levelData[guildId] = {};
+  }
+
+  if (!levelData[guildId][userId]) {
+    levelData[guildId][userId] = {
+  xp: 0,
+  name: member.displayName,
+  messages: 0,
+  achievements: [],
+  voiceMinutes: 0,
+  voiceStart: null,
+  voiceXpToday: 0,
+  voiceXpDate: null,
+
+  dailyXp: 0,
+  dailyXpDate: null,
+  kingCount: 0,
+      nightMessages: 0,
+morningMessages: 0,
+luckyCount: 0,
+badLuckCount: 0,
+      voiceXpMinutes: 0
 };
+  }
+
+  const userData = levelData[guildId][userId];
+
+  // 進入語音
+  if (!oldState.channel && newState.channel) {
+    const now = Date.now();
+
+    userData.voiceStart = String(now);
+    voiceSessions.set(key, now);
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("語音開始儲存失敗：", err);
+    }
+
+    return;
+  }
+
+  // 離開語音
+  if (oldState.channel && !newState.channel) {
+    const startTime =
+      Number(userData.voiceStart) ||
+      voiceSessions.get(key);
+
+    if (!startTime) return;
+
+    const minutes = Math.floor((Date.now() - startTime) / 60000);
+
+    voiceSessions.delete(key);
+   userData.voiceStart = null;
+userData.voiceMinutes = (userData.voiceMinutes || 0) + minutes;
+    // 🎧 語音 XP：30 分鐘 = 1 XP，每日最多 15 XP
+const today = new Date().toLocaleDateString("zh-TW", {
+  timeZone: "Asia/Taipei"
+});
+
+if (userData.voiceXpDate !== today) {
+  userData.voiceXpDate = today;
+  userData.voiceXpToday = 0;
+}
+
+userData.voiceXpMinutes = (userData.voiceXpMinutes || 0) + minutes;
+
+const rawVoiceXp = Math.floor(userData.voiceXpMinutes / 30);
+const remainingVoiceXp = Math.max(0, 15 - (userData.voiceXpToday || 0));
+const voiceXp = Math.min(rawVoiceXp, remainingVoiceXp);
+
+if (voiceXp > 0) {
+  userData.voiceXpMinutes -= voiceXp * 30;
+}
+
+userData.xp += voiceXp;
+    if (userData.dailyXpDate !== today) {
+  userData.dailyXpDate = today;
+  userData.dailyXp = 0;
+}
+
+userData.dailyXp = (userData.dailyXp || 0) + voiceXp;
+userData.voiceXpToday = (userData.voiceXpToday || 0) + voiceXp;
+
+
+await checkAchievements(
+  {
+    guild: member.guild
+  },
+  userData,
+  {
+    singleVoiceMinutes: minutes
+  }
+);
+
+ console.log(
+  `🎧 ${member.displayName} 語音 ${minutes} 分鐘 (+${voiceXp} XP，今日語音XP ${userData.voiceXpToday}/15)`
+);
+
+    saveLevelData();
+
+    try {
+      await saveLevelsToSheet();
+    } catch (err) {
+      console.error("語音結算儲存失敗：", err);
+    }
+  }
+});
+client.on("guildMemberRemove", async member => {
+  try {
+    const channel = member.guild.channels.cache.get(LEAVE_CHANNEL_ID);
+    if (!channel) return;
+
+    const displayName =
+  levelData[member.guild.id]?.[member.id]?.name ||
+  member.displayName ||
+  member.user.username;
+
+    const embed = new EmbedBuilder()
+      .setColor("#E74C3C")
+      .setTitle("📤 成員離開通知")
+      .setDescription(`🍁 **${displayName}** 已離開 EtheReal`)
+      .setTimestamp();
+
+    await channel.send({
+      embeds: [embed]
+    });
+  } catch (err) {
+    console.error("成員離開通知錯誤：", err);
+  }
+});
+module.exports = { client };
