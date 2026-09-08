@@ -1,4 +1,7 @@
-const { client } = require("./src/coreBot");
+const coreBot = require("./src/coreBot");
+
+const client = coreBot.client || coreBot;
+
 const {
   setupRegistration
 } = require("./src/registration");
@@ -10,6 +13,15 @@ const {
 const {
   setupBossTracker
 } = require("./src/bossTracker");
+
+if (!client || typeof client.on !== "function") {
+  console.error("❌ Discord client 載入失敗");
+  console.error(
+    "coreBot exports:",
+    Object.keys(coreBot || {})
+  );
+  process.exit(1);
+}
 
 setupRegistration(client);
 setupSupportRole(client);
