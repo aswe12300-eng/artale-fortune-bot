@@ -107,12 +107,11 @@ function createBossPanel() {
     .setColor("#E67E22")
     .setTitle("👑 EtheReal 野王追蹤")
     .setDescription(
-      "先選擇野王，再使用下方按鈕回報。\n\n" +
-      "☠️ **已擊殺**：記錄擊殺時間並計算重生\n" +
-      "❌ **未找到**：記錄這一頻已搜尋過\n" +
-      "🔢 **更換 CH**：切換你目前所在頻道\n" +
-      "📋 **查看紀錄**：查看目前野王情報\n\n" +
-      "第一次使用時會請你輸入 CH，之後 Bot 會記住。"
+      "操作順序：**選野王 → 選 CH → 回報結果**。\n\n" +
+      "選完 CH 後，這個面板會直接切換成：\n" +
+      "**☠️ 已擊殺 / ❌ 未找到**\n\n" +
+      "不會再另外跳出新的操作訊息。\n" +
+      "📋 **查看紀錄**：查看目前野王情報"
     )
     .setFooter({
       text: "EtheReal｜野王追蹤系統"
@@ -173,6 +172,28 @@ function createBossPanel() {
 }
 
 
+function createActivePanel(bossName, channelNumber) {
+  const embed = new EmbedBuilder()
+    .setColor("#E67E22")
+    .setTitle("👑 EtheReal 野王追蹤")
+    .setDescription(
+      `👑 目前野王：**${bossName}**\n` +
+      `📡 目前 CH：**${channelNumber}**\n\n` +
+      "請直接選擇搜尋結果。"
+    )
+    .setFooter({
+      text: "EtheReal｜野王追蹤系統"
+    });
+
+  return {
+    embeds: [embed],
+    components: [
+      createQuickActionRow()
+    ]
+  };
+}
+
+
 function createQuickActionRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -211,7 +232,7 @@ function createQuickActionRow() {
 // CH 輸入視窗
 // ==============================
 
-function createChannelModal(type, bossName = "") {
+function createChannelModal(type, bossName = "", defaultChannel = null) {
   const modal = new ModalBuilder()
     .setCustomId(
       bossName
@@ -227,6 +248,10 @@ function createChannelModal(type, bossName = "") {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(4);
+
+  if (defaultChannel) {
+    input.setValue(String(defaultChannel));
+  }
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(input)
@@ -272,6 +297,7 @@ function setupBossTracker(client) {
 
       // ========================
       // 選擇野王
+      // 選王後直接選 CH
       // ========================
 
       if (
@@ -290,25 +316,15 @@ function setupBossTracker(client) {
           interaction.user.id
         );
 
-        // 選完後立刻把公開面板的兩個下拉選單重置，
-        // 避免上、下兩個選單同時看起來各選了一隻王。
-        await interaction.update(
-          createBossPanel()
+        // 選完野王後，立即跳出 CH 輸入視窗。
+        // 如果之前用過，會先帶入上一次的 CH，若沒換頻直接送出即可。
+        await interaction.showModal(
+          createChannelModal(
+            "boss_set_channel_modal",
+            bossName,
+            currentChannel
+          )
         );
-
-        // 只有操作者自己會看到目前真正選中的野王。
-        await interaction.followUp({
-          content:
-            `👑 目前選擇：**${bossName}**\n` +
-            (currentChannel
-              ? `📡 目前 CH：**${currentChannel}**\n\n`
-              : "📡 目前還沒有設定 CH\n\n") +
-            "最後一次選擇的野王，就是目前要回報的野王。",
-          components: [
-            createQuickActionRow()
-          ],
-          ephemeral: true
-        });
 
         return;
       }
@@ -463,7 +479,48 @@ if (
       }
 
       // ========================
+      // 選王後設定 CH Modal
+      // 直接更新原本面板，不另外新增操作訊息
+      // ========================
+
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith(
+          "boss_set_channel_modal:"
+        )
+      ) {
+        const bossName =
+          interaction.customId.split(":")[1];
+
+        const channelNumber =
+          parseChannelNumber(interaction);
+
+        if (!channelNumber) return;
+
+        selectedBoss.set(
+          `${interaction.guild.id}:${interaction.user.id}`,
+          bossName
+        );
+
+        setUserChannel(
+          interaction.guild.id,
+          interaction.user.id,
+          channelNumber
+        );
+
+        await interaction.update(
+          createActivePanel(
+            bossName,
+            channelNumber
+          )
+        );
+
+        return;
+      }
+
+      // ========================
       // 更換 CH Modal
+      // 直接更新原本面板
       // ========================
 
       if (
@@ -476,20 +533,32 @@ if (
 
         if (!channelNumber) return;
 
+        const key =
+          `${interaction.guild.id}:${interaction.user.id}`;
+
+        const bossName =
+          selectedBoss.get(key);
+
         setUserChannel(
           interaction.guild.id,
           interaction.user.id,
           channelNumber
         );
 
-        await interaction.reply({
-          content:
-            `✅ 目前頻道已更換為 **CH ${channelNumber}**`,
-          components: [
-            createQuickActionRow()
-          ],
-          ephemeral: true
-        });
+        if (bossName) {
+          await interaction.update(
+            createActivePanel(
+              bossName,
+              channelNumber
+            )
+          );
+        } else {
+          await interaction.reply({
+            content:
+              `✅ 已切換到 CH ${channelNumber}，請先選擇野王。`,
+            ephemeral: true
+          });
+        }
 
         return;
       }
@@ -836,7 +905,16 @@ async function saveKillRecord(
     spawnReminderSent: false
   });
 
-  await interaction.reply({
+  // 先更新原本操作面板，不新增新的操作訊息
+  await interaction.update(
+    createActivePanel(
+      bossName,
+      channelNumber
+    )
+  );
+
+  // 頻道只新增真正的紀錄
+  await interaction.channel.send({
     embeds: [
       new EmbedBuilder()
         .setColor("#57F287")
@@ -870,12 +948,6 @@ async function saveKillRecord(
             inline: true
           }
         )
-        .setFooter({
-          text: `目前 CH ${channelNumber}｜可直接繼續回報`
-        })
-    ],
-    components: [
-      createQuickActionRow()
     ]
   });
 }
@@ -904,26 +976,18 @@ async function saveNotFoundRecord(
     searchRecords.shift();
   }
 
-  await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#95A5A6")
-        .setTitle(
-          `❌ ${bossName} 未找到`
-        )
-        .setDescription(
-          `📡 **CH ${channelNumber}**\n` +
-          `🕒 ${formatTime(time)}\n` +
-          `👤 ${interaction.user}`
-        )
-        .setFooter({
-          text: `目前 CH ${channelNumber}｜可直接繼續回報`
-        })
-    ],
-    components: [
-      createQuickActionRow()
-    ]
-  });
+  // 操作面板留在原位，不再額外跳出操作訊息
+  await interaction.update(
+    createActivePanel(
+      bossName,
+      channelNumber
+    )
+  );
+
+  // 未找到只留一行簡短紀錄
+  await interaction.channel.send(
+    `❌ **${bossName}**｜CH ${channelNumber}｜未找到｜${formatTime(time)}｜${interaction.user}`
+  );
 }
 
 module.exports = {
