@@ -197,7 +197,13 @@ function createQuickActionRow() {
       .setCustomId("boss_change_channel")
       .setLabel("換 CH")
       .setEmoji("🔢")
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("boss_view")
+      .setLabel("紀錄")
+      .setEmoji("📋")
+      .setStyle(ButtonStyle.Success)
   );
 }
 
@@ -236,49 +242,23 @@ function createChannelModal(type, bossName = "") {
 function setupBossTracker(client) {
 
   // ============================
-  // Bot 啟動後自動建立野王面板
+  // 所有成員都可以自行叫出野王面板
   // ============================
 
-  client.once("ready", async () => {
-    try {
-      const channel =
-        client.channels.cache.get(BOSS_CHANNEL_ID) ||
-        await client.channels.fetch(BOSS_CHANNEL_ID).catch(() => null);
+  client.on("messageCreate", async message => {
+    if (message.author.bot) return;
+    if (!message.guild) return;
 
-      if (!channel?.isTextBased()) {
-        console.error("❌ 找不到野王頻道，無法自動建立面板。");
-        return;
-      }
-
-      // 檢查最近 50 則訊息，避免 Bot 每次重啟都重複建立面板
-      const recentMessages =
-        await channel.messages.fetch({ limit: 50 });
-
-      const hasBossPanel =
-        recentMessages.some(message =>
-          message.author.id === client.user.id &&
-          message.embeds.some(embed =>
-            embed.title === "👑 EtheReal 野王追蹤"
-          )
-        );
-
-      if (hasBossPanel) {
-        console.log("✅ 野王面板已存在，不重複建立。");
-        return;
-      }
-
-      await channel.send(
-        createBossPanel()
-      );
-
-      console.log("✅ 已自動建立野王面板。");
-
-    } catch (error) {
-      console.error(
-        "❌ 自動建立野王面板失敗：",
-        error
-      );
+    if (message.content.trim() !== "-野王") {
+      return;
     }
+
+    await message.channel.send(
+      createBossPanel()
+    );
+
+    // 有刪除訊息權限時，自動刪掉成員輸入的 -野王
+    await message.delete().catch(() => {});
   });
 
   // ============================
