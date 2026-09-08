@@ -6,8 +6,7 @@ const {
   ModalBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
-  TextInputStyle,
-  PermissionsBitField
+  TextInputStyle
 } = require("discord.js");
 
 // ==============================
@@ -17,8 +16,6 @@ const {
 // 目前野王提醒固定發到這個頻道
 const BOSS_CHANNEL_ID = "1546602217371467786";
 
-// 幹部身分組
-const STAFF_ROLE_ID = "1487011622798102660";
 
 // ==============================
 // 野王重生資料（分鐘）
@@ -239,40 +236,49 @@ function createChannelModal(type, bossName = "") {
 function setupBossTracker(client) {
 
   // ============================
-  // 建立面板
+  // Bot 啟動後自動建立野王面板
   // ============================
 
-  client.on("messageCreate", async message => {
-    if (message.author.bot) return;
-    if (!message.guild) return;
+  client.once("ready", async () => {
+    try {
+      const channel =
+        client.channels.cache.get(BOSS_CHANNEL_ID) ||
+        await client.channels.fetch(BOSS_CHANNEL_ID).catch(() => null);
 
-    if (message.content.trim() !== "-建立野王面板") {
-      return;
+      if (!channel?.isTextBased()) {
+        console.error("❌ 找不到野王頻道，無法自動建立面板。");
+        return;
+      }
+
+      // 檢查最近 50 則訊息，避免 Bot 每次重啟都重複建立面板
+      const recentMessages =
+        await channel.messages.fetch({ limit: 50 });
+
+      const hasBossPanel =
+        recentMessages.some(message =>
+          message.author.id === client.user.id &&
+          message.embeds.some(embed =>
+            embed.title === "👑 EtheReal 野王追蹤"
+          )
+        );
+
+      if (hasBossPanel) {
+        console.log("✅ 野王面板已存在，不重複建立。");
+        return;
+      }
+
+      await channel.send(
+        createBossPanel()
+      );
+
+      console.log("✅ 已自動建立野王面板。");
+
+    } catch (error) {
+      console.error(
+        "❌ 自動建立野王面板失敗：",
+        error
+      );
     }
-
-    const isAdministrator =
-      message.member.permissions.has(
-        PermissionsBitField.Flags.Administrator
-      );
-
-    const isStaff =
-      message.member.roles.cache.has(
-        STAFF_ROLE_ID
-      );
-
-    if (!isAdministrator && !isStaff) {
-      await message.reply(
-        "❌ 只有管理員或幹部可以建立野王面板。"
-      );
-      return;
-    }
-
-    // 測試期間不限制建立面板頻道
-    await message.channel.send(
-      createBossPanel()
-    );
-
-    await message.delete().catch(() => {});
   });
 
   // ============================
