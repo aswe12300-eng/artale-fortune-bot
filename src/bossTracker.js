@@ -9,12 +9,35 @@ const {
   TextInputStyle
 } = require("discord.js");
 
+const { google } = require("googleapis");
+
 // ==============================
 // 設定
 // ==============================
 
 // 目前野王提醒固定發到這個頻道
 const BOSS_CHANNEL_ID = "1546772691984588811";
+
+// Google Sheets：沿用 coreBot.js 已經使用的同一組環境變數
+const SHEET_ID = process.env.SHEET_ID;
+const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
+const GOOGLE_PRIVATE_KEY =
+  process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+const BOSS_SHEET_NAME = "野王紀錄";
+
+const bossSheetAuth = new google.auth.JWT(
+  GOOGLE_CLIENT_EMAIL,
+  null,
+  GOOGLE_PRIVATE_KEY,
+  ["https://www.googleapis.com/auth/spreadsheets"]
+);
+
+const bossSheets = google.sheets({
+  version: "v4",
+  auth: bossSheetAuth
+});
+
 
 
 // ==============================
@@ -62,14 +85,205 @@ const WILD_BOSSES = {
 };
 
 // ==============================
-// 暫存資料
-// Bot 重啟後會清空
+// 執行中資料
+// 野王與未找到紀錄會同步到 Google Sheets，Bot 重啟後會重新載入
+// selectedBoss 只屬於當下操作狀態，不需要永久保存
 // ==============================
 
 const bossRecords = new Map();
 const searchRecords = [];
 const selectedBoss = new Map();
 const userChannels = new Map();
+
+
+// ==============================
+// Google Sheets 持久化
+// ==============================
+
+function toIso(timestamp) {
+  if (!timestamp) return "";
+  return new Date(timestamp).toISOString();
+}
+
+function fromSheetTime(value) {
+  if (!value) return 0;
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function appendBossSheetRow({
+  guildId,
+  bossName,
+  channelNumber,
+  status,
+  reportTime,
+  earliest = "",
+  latest = "",
+  userId
+}) {
+  if (
+    !SHEET_ID ||
+    !GOOGLE_CLIENT_EMAIL ||
+    !GOOGLE_PRIVATE_KEY
+  ) {
+    console.warn(
+      "⚠️ 野王紀錄未寫入 Google Sheets：缺少 Google 環境變數"
+    );
+    return;
+  }
+
+  await bossSheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `'${BOSS_SHEET_NAME}'!A:H`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        String(guildId),
+        bossName,
+        String(channelNumber),
+        status,
+        toIso(reportTime),
+        earliest ? toIso(earliest) : "",
+        latest ? toIso(latest) : "",
+        String(userId)
+      ]]
+    }
+  });
+}
+
+async function loadBossRecordsFromSheet() {
+  if (
+    !SHEET_ID ||
+    !GOOGLE_CLIENT_EMAIL ||
+    !GOOGLE_PRIVATE_KEY
+  ) {
+    console.warn(
+      "⚠️ 無法載入野王紀錄：缺少 Google 環境變數"
+    );
+    return;
+  }
+
+  const res =
+    await bossSheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${BOSS_SHEET_NAME}'!A2:H`
+    });
+
+  const rows = res.data.values || [];
+  const now = Date.now();
+
+  bossRecords.clear();
+  searchRecords.length = 0;
+
+  for (const row of rows) {
+    const [
+      guildId,
+      bossName,
+      channelText,
+      status,
+      reportTimeText,
+      earliestText,
+      latestText,
+      userId
+    ] = row;
+
+    if (
+      !guildId ||
+      !bossName ||
+      !channelText ||
+      !status
+    ) {
+      continue;
+    }
+
+    const channelNumber = Number(channelText);
+    const reportTime =
+      fromSheetTime(reportTimeText);
+
+    if (
+      !Number.isFinite(channelNumber) ||
+      channelNumber < 1 ||
+      channelNumber > 2500 ||
+      !reportTime
+    ) {
+      continue;
+    }
+
+    // 順便恢復每位成員最後使用的 CH
+    if (userId) {
+      setUserChannel(
+        guildId,
+        userId,
+        channelNumber
+      );
+    }
+
+    if (status === "擊殺") {
+      const earliest =
+        fromSheetTime(earliestText);
+      const latest =
+        fromSheetTime(latestText);
+
+      if (!earliest || !latest) {
+        continue;
+      }
+
+      // 已超過「最晚重生 + 2 小時」的歷史紀錄只留在試算表，
+      // 不重新放回 Discord 的即時追蹤清單。
+      if (
+        now >
+        latest + 2 * 60 * 60 * 1000
+      ) {
+        continue;
+      }
+
+      const recordKey =
+        `${guildId}:${bossName}:${channelNumber}`;
+
+      bossRecords.set(recordKey, {
+        guildId,
+        bossName,
+        channelNumber,
+        killedAt: reportTime,
+        earliest,
+        latest,
+        userId: userId || "",
+        // 重啟後依目前時間恢復提醒狀態，避免舊提醒大量重複。
+        preReminderSent:
+          now >= earliest,
+        spawnReminderSent:
+          now >= latest
+      });
+    }
+
+    if (status === "未找到") {
+      searchRecords.push({
+        guildId,
+        bossName,
+        channelNumber,
+        time: reportTime,
+        userId: userId || ""
+      });
+
+      if (searchRecords.length > 200) {
+        searchRecords.shift();
+      }
+    }
+  }
+
+  console.log(
+    `✅ 已從 Google Sheets 載入野王資料：` +
+    `${bossRecords.size} 筆追蹤、` +
+    `${searchRecords.length} 筆未找到`
+  );
+}
 
 // ==============================
 // 時間工具
@@ -266,6 +480,25 @@ function createChannelModal(type, bossName = "", defaultChannel = null) {
 
 function setupBossTracker(client) {
 
+  // Bot 上線後從 Google Sheets 恢復野王紀錄
+  const loadBossData = async () => {
+    try {
+      await loadBossRecordsFromSheet();
+    } catch (error) {
+      console.error(
+        "❌ Google Sheets 野王紀錄載入失敗：",
+        error
+      );
+    }
+  };
+
+  if (client.isReady()) {
+    loadBossData();
+  } else {
+    client.once("ready", loadBossData);
+  }
+
+
   // ============================
   // 所有成員都可以自行叫出野王面板
   // ============================
@@ -337,35 +570,14 @@ if (
   interaction.isButton() &&
   interaction.customId === "boss_change_boss"
 ) {
-  const bossNames = Object.keys(WILD_BOSSES);
+  const key =
+    `${interaction.guild.id}:${interaction.user.id}`;
 
-  const components = [];
+  selectedBoss.delete(key);
 
-  for (let i = 0; i < bossNames.length; i += 25) {
-    components.push(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`boss_select_${i}`)
-          .setPlaceholder(
-            i === 0
-              ? "👑 選擇野王"
-              : "👑 更多野王"
-          )
-          .addOptions(
-            bossNames.slice(i, i + 25).map(name => ({
-              label: name,
-              value: name
-            }))
-          )
-      )
-    );
-  }
-
-  await interaction.reply({
-    content: "🔄 請選擇下一隻要回報的野王：",
-    components,
-    ephemeral: true
-  });
+  await interaction.update(
+    createBossPanel()
+  );
 
   return;
 }
@@ -378,8 +590,18 @@ if (
         interaction.isButton() &&
         interaction.customId === "boss_change_channel"
       ) {
+        const currentChannel =
+          getUserChannel(
+            interaction.guild.id,
+            interaction.user.id
+          );
+
         await interaction.showModal(
-          createChannelModal("boss_change_channel_modal")
+          createChannelModal(
+            "boss_change_channel_modal",
+            "",
+            currentChannel
+          )
         );
         return;
       }
@@ -905,6 +1127,25 @@ async function saveKillRecord(
     spawnReminderSent: false
   });
 
+  // 永久保存到 Google Sheets
+  try {
+    await appendBossSheetRow({
+      guildId: interaction.guild.id,
+      bossName,
+      channelNumber,
+      status: "擊殺",
+      reportTime: killedAt,
+      earliest,
+      latest,
+      userId: interaction.user.id
+    });
+  } catch (error) {
+    console.error(
+      "❌ 擊殺紀錄寫入 Google Sheets 失敗：",
+      error
+    );
+  }
+
   // 先更新原本操作面板，不新增新的操作訊息
   await interaction.update(
     createActivePanel(
@@ -970,6 +1211,23 @@ async function saveNotFoundRecord(
     time,
     userId: interaction.user.id
   });
+
+  // 永久保存到 Google Sheets
+  try {
+    await appendBossSheetRow({
+      guildId: interaction.guild.id,
+      bossName,
+      channelNumber,
+      status: "未找到",
+      reportTime: time,
+      userId: interaction.user.id
+    });
+  } catch (error) {
+    console.error(
+      "❌ 未找到紀錄寫入 Google Sheets 失敗：",
+      error
+    );
+  }
 
   // 只保留最近 200 筆
   if (searchRecords.length > 200) {
