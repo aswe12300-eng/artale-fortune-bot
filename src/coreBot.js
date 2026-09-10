@@ -134,6 +134,257 @@ voiceXpMinutes: Number(voiceXpMinutes) || 0
   console.log("✅ 已從 Google Sheets 載入多伺服器 XP");
 }
 
+async function repairLevelsFromBackup() {
+  console.log("🛠️ 開始修復活躍資料...");
+
+  const backupRes =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "活躍資料_歸零前備份!A2:T"
+    });
+
+  const currentRes =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "工作表1!A2:T"
+    });
+
+  const backupRows =
+    backupRes.data.values || [];
+
+  const currentRows =
+    currentRes.data.values || [];
+
+  const currentMap =
+    new Map();
+
+  for (const row of currentRows) {
+    const guildId = row[0];
+    const userId = row[1];
+
+    if (!guildId || !userId) {
+      continue;
+    }
+
+    currentMap.set(
+      `${guildId}_${userId}`,
+      row
+    );
+  }
+
+  const repairedRows = [];
+
+  for (const backupRow of backupRows) {
+    const guildId =
+      backupRow[0];
+
+    const userId =
+      backupRow[1];
+
+    if (!guildId || !userId) {
+      continue;
+    }
+
+    const key =
+      `${guildId}_${userId}`;
+
+    const currentRow =
+      currentMap.get(key);
+
+    if (!currentRow) {
+      repairedRows.push(
+        backupRow
+      );
+
+      continue;
+    }
+
+    const oldAchievements =
+      String(
+        backupRow[6] || ""
+      )
+        .split(",")
+        .filter(Boolean);
+
+    const newAchievements =
+      String(
+        currentRow[6] || ""
+      )
+        .split(",")
+        .filter(Boolean);
+
+    const achievements =
+      [
+        ...new Set([
+          ...oldAchievements,
+          ...newAchievements
+        ])
+      ].join(",");
+
+    const repaired = [
+      guildId,
+      userId,
+
+      currentRow[2] ||
+        backupRow[2] ||
+        "未知成員",
+
+      // XP
+      Number(
+        backupRow[3] || 0
+      ) +
+      Number(
+        currentRow[3] || 0
+      ),
+
+      // Level 之後重新計算
+      0,
+
+      // 發言次數
+      Number(
+        backupRow[5] || 0
+      ) +
+      Number(
+        currentRow[5] || 0
+      ),
+
+      achievements,
+
+      // 語音分鐘
+      Number(
+        backupRow[7] || 0
+      ) +
+      Number(
+        currentRow[7] || 0
+      ),
+
+      // voiceStart
+      currentRow[8] ||
+        backupRow[8] ||
+        "",
+
+      new Date().toLocaleString(
+        "zh-TW",
+        {
+          timeZone:
+            "Asia/Taipei"
+        }
+      ),
+
+      // 今日語音 XP
+      Number(
+        backupRow[10] || 0
+      ) +
+      Number(
+        currentRow[10] || 0
+      ),
+
+      currentRow[11] ||
+        backupRow[11] ||
+        "",
+
+      // 今日 XP
+      Number(
+        backupRow[12] || 0
+      ) +
+      Number(
+        currentRow[12] || 0
+      ),
+
+      currentRow[13] ||
+        backupRow[13] ||
+        "",
+
+      // 活躍王次數
+      Number(
+        backupRow[14] || 0
+      ) +
+      Number(
+        currentRow[14] || 0
+      ),
+
+      // 夜貓發言
+      Number(
+        backupRow[15] || 0
+      ) +
+      Number(
+        currentRow[15] || 0
+      ),
+
+      // 早鳥發言
+      Number(
+        backupRow[16] || 0
+      ) +
+      Number(
+        currentRow[16] || 0
+      ),
+
+      // 天選之人
+      Number(
+        backupRow[17] || 0
+      ) +
+      Number(
+        currentRow[17] || 0
+      ),
+
+      // 大凶
+      Number(
+        backupRow[18] || 0
+      ) +
+      Number(
+        currentRow[18] || 0
+      ),
+
+      // 語音剩餘分鐘
+      Number(
+        backupRow[19] || 0
+      ) +
+      Number(
+        currentRow[19] || 0
+      )
+    ];
+
+    repaired[4] =
+      getLevel(
+        repaired[3]
+      );
+
+    repairedRows.push(
+      repaired
+    );
+
+    currentMap.delete(key);
+  }
+
+  // 備份裡沒有，但重置後新加入的成員保留
+  for (
+    const row of
+      currentMap.values()
+  ) {
+    repairedRows.push(row);
+  }
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2:T"
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: "工作表1!A2",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: repairedRows
+    }
+  });
+
+  console.log(
+    `✅ 活躍資料修復完成，共 ${repairedRows.length} 人`
+  );
+
+  return repairedRows.length;
+}
+
 async function saveLevelsToSheet() {
   const values = [];
 
@@ -665,6 +916,52 @@ console.log("收到訊息：", message.content);
 
   if (message.author.bot) return;
   if (!message.guild) return;
+  if (
+  message.content.trim() ===
+  "-修復活躍資料"
+) {
+  if (
+    !message.member.permissions.has(
+      "ManageGuild"
+    )
+  ) {
+    return message.reply(
+      "❌ 只有管理員可以使用這個指令。"
+    );
+  }
+
+  try {
+    await message.reply(
+      "🛠️ 正在修復活躍資料，請稍候..."
+    );
+
+    const count =
+      await repairLevelsFromBackup();
+
+    // 修復完成後重新載入記憶體
+    levelData = {};
+
+    await loadLevelsFromSheet();
+
+    saveLevelData();
+
+    await message.channel.send(
+      `✅ 活躍資料修復完成！\n共修復／保留 **${count} 位成員**。`
+    );
+  } catch (err) {
+    console.error(
+      "活躍資料修復失敗：",
+      err
+    );
+
+    await message.channel.send(
+      "❌ 修復失敗，請查看 Bot Logs。"
+    );
+  }
+
+  return;
+}
+  
 
   const guildId = message.guild.id;
 const userId = message.author.id;
