@@ -40,7 +40,7 @@ const signupSessions = new Map();
 
 
 // ==============================
-// 取得台灣時間
+// 台灣時間 / 日期工具
 // ==============================
 
 function getTaipeiDate() {
@@ -59,38 +59,42 @@ function formatDate(date) {
   return `${y}/${m}/${d}`;
 }
 
+function parseYmd(text) {
+  const [y, m, d] = text.split("/").map(Number);
+
+  return new Date(
+    y,
+    m - 1,
+    d,
+    0,
+    0,
+    0,
+    0
+  );
+}
+
 
 // ==============================
-// 取得本週二～下周一
+// 遊戲週期：星期二～下星期一
 // ==============================
 
-function getWeekRange() {
+function getCurrentRaidWeekRange() {
   const now = getTaipeiDate();
-
   const day = now.getDay();
-  // 0 = 星期日
-  // 1 = 星期一
-  // 2 = 星期二
-  // 3 = 星期三
-  // 4 = 星期四
-  // 5 = 星期五
-  // 6 = 星期六
 
   let diffToTuesday;
 
-  // 每週二為新週期第一天
   if (day === 0) {
-    // 星期日 → 往前 5 天到星期二
     diffToTuesday = -5;
   } else if (day === 1) {
-    // 星期一 → 往前 6 天到上週二
     diffToTuesday = -6;
   } else {
-    // 星期二～星期六
     diffToTuesday = 2 - day;
   }
 
   const tuesday = new Date(now);
+
+  tuesday.setHours(0, 0, 0, 0);
 
   tuesday.setDate(
     now.getDate() + diffToTuesday
@@ -106,32 +110,120 @@ function getWeekRange() {
 }
 
 
+// 星期一建立面板時
+// 自動建立「隔天星期二開始」的新一期
+function getPanelWeekRange() {
+  const now = getTaipeiDate();
+
+  if (now.getDay() === 1) {
+    const tuesday = new Date(now);
+
+    tuesday.setHours(0, 0, 0, 0);
+
+    tuesday.setDate(
+      now.getDate() + 1
+    );
+
+    const monday = new Date(tuesday);
+
+    monday.setDate(
+      tuesday.getDate() + 6
+    );
+
+    return `${formatDate(tuesday)}～${formatDate(monday)}`;
+  }
+
+  return getCurrentRaidWeekRange();
+}
+
+
+// 從 Discord 報名面板取得該面板的週次
+function getWeekFromInteraction(interaction) {
+  const description =
+    interaction.message?.embeds?.[0]?.description || "";
+
+  const match =
+    description.match(
+      /(\d{4}\/\d{2}\/\d{2}～\d{4}\/\d{2}\/\d{2})/
+    );
+
+  return match
+    ? match[1]
+    : getPanelWeekRange();
+}
+
+
+// ==============================
+// 報名截止時間
+// 星期日 24:00 = 星期一 00:00
+// ==============================
+
+function getSignupDeadline(weekRange) {
+  const [startText, endText] =
+    weekRange.split("～");
+
+  if (!startText || !endText) {
+    return null;
+  }
+
+  return parseYmd(endText);
+}
+
+function isSignupOpen(weekRange) {
+  const deadline =
+    getSignupDeadline(weekRange);
+
+  if (!deadline) {
+    return false;
+  }
+
+  return getTaipeiDate() < deadline;
+}
+
+function getDeadlineText(weekRange) {
+  const deadline =
+    getSignupDeadline(weekRange);
+
+  if (!deadline) {
+    return "週日 24:00";
+  }
+
+  const sunday =
+    new Date(deadline);
+
+  sunday.setDate(
+    deadline.getDate() - 1
+  );
+
+  return `${formatDate(sunday)} 24:00`;
+}
+
+
 // ==============================
 // 報名主面板
 // ==============================
 
-function getSignupPanelEmbed() {
+function getSignupPanelEmbed(weekRange) {
   return new EmbedBuilder()
-
     .setColor("#9B59FF")
-
     .setTitle(
-      "⚔️ EtheReal｜本週突襲王報名"
+      "⚔️ EtheReal｜突襲王報名"
     )
-
     .setDescription(
-      `📅 **本週週次：${getWeekRange()}**\n\n` +
+      `📅 **報名週次：${weekRange}**\n` +
+      `⏰ **報名截止：${getDeadlineText(weekRange)}**\n\n` +
 
-      "請點下方按鈕填寫本週可以參加的突襲王與時段。\n\n" +
+      "請點下方按鈕填寫可以參加的突襲王與時段。\n" +
+      "同一個 Discord 可以登記多隻角色，每隻角色會各自保留一筆資料。\n\n" +
 
-      "📝 **我要報名**：新增本週報名\n" +
-      "✏️ **修改報名**：重新填寫本週資料\n" +
-      "❌ **取消報名**：取消本週報名\n" +
-      "📋 **我的報名**：查看本週資料"
+      "📝 **我要報名**：新增一隻角色\n" +
+      "✏️ **修改報名**：先選角色，再修改資料\n" +
+      "❌ **取消報名**：先選角色，再取消該角色\n" +
+      "📋 **我的報名**：查看本週所有已報名角色"
     )
-
     .setFooter({
-      text: "EtheReal 突襲王報名系統"
+      text:
+        "報名截止後無法新增、修改或取消｜EtheReal 突襲王報名系統"
     });
 }
 
@@ -142,7 +234,6 @@ function getSignupPanelEmbed() {
 
 function getSignupPanelButtons() {
   return new ActionRowBuilder()
-
     .addComponents(
 
       new ButtonBuilder()
@@ -173,120 +264,111 @@ function getSignupPanelButtons() {
 
 
 // ==============================
-// 基本資料填寫視窗
+// 基本資料 Modal
 // ==============================
 
-function buildBasicInfoModal(mode = "new") {
+function buildBasicInfoModal(
+  mode = "new",
+  existingRow = null
+) {
 
-  const modal = new ModalBuilder()
+  const modal =
+    new ModalBuilder()
+      .setCustomId(
+        `raid_signup_modal_${mode}`
+      )
+      .setTitle(
+        mode === "edit"
+          ? "修改突襲王報名"
+          : "突襲王報名"
+      );
 
-    .setCustomId(
-      `raid_signup_modal_${mode}`
-    )
-
-    .setTitle(
-      mode === "edit"
-        ? "修改突襲王報名"
-        : "突襲王報名"
-    );
-
-
-  // 角色名稱
 
   const characterName =
     new TextInputBuilder()
-
       .setCustomId("character_name")
-
       .setLabel("角色名稱")
-
-      .setStyle(
-        TextInputStyle.Short
-      )
-
+      .setStyle(TextInputStyle.Short)
       .setRequired(true)
-
       .setMaxLength(30);
 
-
-  // 職業
 
   const job =
     new TextInputBuilder()
-
       .setCustomId("job")
-
       .setLabel(
         "職業（例如：冰雷、主教、英雄）"
       )
-
-      .setStyle(
-        TextInputStyle.Short
-      )
-
+      .setStyle(TextInputStyle.Short)
       .setRequired(true)
-
       .setMaxLength(30);
 
-
-  // 等級
 
   const level =
     new TextInputBuilder()
-
       .setCustomId("level")
-
       .setLabel("等級")
-
-      .setStyle(
-        TextInputStyle.Short
-      )
-
+      .setStyle(TextInputStyle.Short)
       .setRequired(true)
-
       .setMaxLength(5);
 
 
-  // 常駐表功
-
   const power =
     new TextInputBuilder()
-
       .setCustomId("power")
-
       .setLabel("常駐表功")
-
-      .setStyle(
-        TextInputStyle.Short
-      )
-
+      .setStyle(TextInputStyle.Short)
       .setRequired(true)
-
       .setPlaceholder(
         "例如：32500 或 3.25萬"
       )
-
       .setMaxLength(30);
 
 
-  // 備註
-
   const note =
     new TextInputBuilder()
-
       .setCustomId("note")
-
       .setLabel(
         "備註（沒有可留白）"
       )
-
-      .setStyle(
-        TextInputStyle.Paragraph
-      )
-
+      .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
-
       .setMaxLength(200);
+
+
+  // 修改角色時自動帶入原本資料
+  if (existingRow) {
+
+    if (existingRow[3]) {
+      characterName.setValue(
+        String(existingRow[3]).slice(0, 30)
+      );
+    }
+
+    if (existingRow[4]) {
+      job.setValue(
+        String(existingRow[4]).slice(0, 30)
+      );
+    }
+
+    if (existingRow[5]) {
+      level.setValue(
+        String(existingRow[5]).slice(0, 5)
+      );
+    }
+
+    if (existingRow[6]) {
+      power.setValue(
+        String(existingRow[6]).slice(0, 30)
+      );
+    }
+
+    if (existingRow[9]) {
+      note.setValue(
+        String(existingRow[9]).slice(0, 200)
+      );
+    }
+  }
 
 
   modal.addComponents(
@@ -308,13 +390,12 @@ function buildBasicInfoModal(mode = "new") {
 
   );
 
-
   return modal;
 }
 
 
 // ==============================
-// 選擇突襲王
+// 選擇王
 // ==============================
 
 function buildBossSelect() {
@@ -369,7 +450,7 @@ function buildBossSelect() {
 
 
 // ==============================
-// 建立星期＋時間選項
+// 時間選項
 // ==============================
 
 function buildTimeOptions(days) {
@@ -407,10 +488,10 @@ function buildTimeOptions(days) {
 
 
 // ==============================
-// 星期一～四
+// 第一頁：星期二～五
 // ==============================
 
-function buildWeekdayTimeSelect() {
+function buildTimeSelect1() {
 
   const menu =
     new StringSelectMenuBuilder()
@@ -420,20 +501,29 @@ function buildWeekdayTimeSelect() {
       )
 
       .setPlaceholder(
-        "星期一～四：選擇可打時段"
+        "星期二～五：選擇可打時段"
       )
 
       .setMinValues(1)
 
-      .setMaxValues(20)
+      .setMaxValues(21)
 
       .addOptions(
-        buildTimeOptions([
-          "星期一",
+
+        {
+          label:
+            "星期二～五都無法參加",
+
+          value: "NONE"
+        },
+
+        ...buildTimeOptions([
           "星期二",
           "星期三",
-          "星期四"
+          "星期四",
+          "星期五"
         ])
+
       );
 
 
@@ -443,10 +533,10 @@ function buildWeekdayTimeSelect() {
 
 
 // ==============================
-// 星期五～日
+// 第二頁：星期六、日、一
 // ==============================
 
-function buildWeekendTimeSelect() {
+function buildTimeSelect2() {
 
   const menu =
     new StringSelectMenuBuilder()
@@ -456,7 +546,7 @@ function buildWeekendTimeSelect() {
       )
 
       .setPlaceholder(
-        "星期五～日：選擇可打時段"
+        "星期六～一：選擇可打時段"
       )
 
       .setMinValues(1)
@@ -467,15 +557,15 @@ function buildWeekendTimeSelect() {
 
         {
           label:
-            "星期五～日都無法參加",
+            "星期六～一都無法參加",
 
           value: "NONE"
         },
 
         ...buildTimeOptions([
-          "星期五",
           "星期六",
-          "星期日"
+          "星期日",
+          "星期一"
         ])
 
       );
@@ -487,20 +577,20 @@ function buildWeekendTimeSelect() {
 
 
 // ==============================
-// 整理時間格式
+// 整理時間
 // ==============================
 
 function formatTimes(values) {
 
   const order = [
 
-    "星期一",
     "星期二",
     "星期三",
     "星期四",
     "星期五",
     "星期六",
-    "星期日"
+    "星期日",
+    "星期一"
 
   ];
 
@@ -545,10 +635,10 @@ function formatTimes(values) {
 
 
 // ==============================
-// 取得試算表資料
+// Google 試算表
 // ==============================
 
-async function getCurrentWeekRows() {
+async function getAllRaidRows() {
 
   const res =
     await sheets.spreadsheets.values.get({
@@ -565,54 +655,80 @@ async function getCurrentWeekRows() {
 }
 
 
+async function clearRaidSheetData() {
+
+  await sheets.spreadsheets.values.clear({
+
+    spreadsheetId: SHEET_ID,
+
+    range:
+      `${RAID_SHEET_NAME}!A2:L`
+
+  });
+
+}
+
+
 // ==============================
-// 找某位成員本週報名
+// 找這個人本週所有角色
 // ==============================
 
-async function findCurrentWeekSignup(
+async function findAllWeekSignups(
   userId,
-  characterName = null
+  weekRange
 ) {
 
-  const week =
-    getWeekRange();
+  const rows =
+    await getAllRaidRows();
+
+
+  return rows
+
+    .map(
+      (row, index) => ({
+
+        rowNumber:
+          index + 2,
+
+        row
+
+      })
+    )
+
+    .filter(
+      ({ row }) =>
+
+        row[0] === weekRange &&
+
+        row[1] === userId &&
+
+        row[11] !== "已取消"
+
+    );
+}
+
+
+// ==============================
+// 找指定角色
+// ==============================
+
+async function findWeekSignup(
+  userId,
+  weekRange,
+  characterName
+) {
 
   const rows =
-    await getCurrentWeekRows();
+    await findAllWeekSignups(
+      userId,
+      weekRange
+    );
 
-  const index =
-    rows.findIndex(row => {
 
-      const sameWeek =
-        row[0] === week;
-
-      const sameUser =
-        row[1] === userId;
-
-      const active =
-        row[11] !== "已取消";
-
-      const sameCharacter =
-        !characterName ||
-        row[3] === characterName;
-
-      return (
-        sameWeek &&
-        sameUser &&
-        active &&
-        sameCharacter
-      );
-
-    });
-
-  if (index === -1) {
-    return null;
-  }
-
-  return {
-    rowNumber: index + 2,
-    row: rows[index]
-  };
+  return rows.find(
+    item =>
+      item.row[3] === characterName
+  ) || null;
 }
 
 
@@ -626,7 +742,7 @@ async function saveSignup(
 ) {
 
   const week =
-    getWeekRange();
+    data.weekRange;
 
 
   const rowValues = [
@@ -666,15 +782,29 @@ async function saveSignup(
   ];
 
 
+  const lookupCharacter =
+
+    data.mode === "edit" &&
+    data.editingCharacterName
+
+      ? data.editingCharacterName
+
+      : data.characterName;
+
+
   const existing =
-  await findCurrentWeekSignup(
-    userId,
-    data.characterName
-  );
+    await findWeekSignup(
+
+      userId,
+
+      week,
+
+      lookupCharacter
+
+    );
 
 
-  // 已報名 → 更新原本那一列
-
+  // 同角色 → 更新
   if (existing) {
 
     await sheets.spreadsheets.values.update({
@@ -702,8 +832,7 @@ async function saveSignup(
   }
 
 
-  // 沒報名 → 新增
-
+  // 不同角色 → 新增一列
   await sheets.spreadsheets.values.append({
 
     spreadsheetId:
@@ -733,16 +862,24 @@ async function saveSignup(
 
 
 // ==============================
-// 取消報名
+// 取消指定角色
 // ==============================
 
 async function cancelSignup(
-  userId
+  userId,
+  weekRange,
+  characterName
 ) {
 
   const existing =
-    await findCurrentWeekSignup(
-      userId
+    await findWeekSignup(
+
+      userId,
+
+      weekRange,
+
+      characterName
+
     );
 
 
@@ -778,97 +915,176 @@ async function cancelSignup(
 
 
 // ==============================
-// 我的報名顯示
+// 選擇角色
 // ==============================
 
-function signupSummaryEmbed(row) {
+function buildCharacterSelect(
+  customId,
+  signups,
+  placeholder
+) {
 
-  return new EmbedBuilder()
+  const options =
+    signups
 
-    .setColor("#2ECC71")
+      .slice(0, 25)
 
-    .setTitle(
-      "📋 我的本週突襲王報名"
-    )
+      .map(
+        ({ row }) => ({
 
-    .addFields(
+          label:
+            `${row[3] || "未命名"}｜${row[4] || "未知職業"} Lv.${row[5] || "-"}`.slice(0, 100),
 
-      {
-        name: "📅 週次",
-        value: row[0] || "-",
-        inline: false
-      },
+          value:
+            String(
+              row[3] || ""
+            ).slice(0, 100),
 
-      {
-        name: "🎮 角色",
-        value: row[3] || "-",
-        inline: true
-      },
+          description:
+            `表功 ${row[6] || "-"}｜${row[7] || "未選王"}`.slice(0, 100)
 
-      {
-        name: "🧙 職業",
-        value: row[4] || "-",
-        inline: true
-      },
+        })
+      );
 
-      {
-        name: "🏅 等級",
-        value: row[5] || "-",
-        inline: true
-      },
 
-      {
-        name: "⚔️ 常駐表功",
-        value: row[6] || "-",
-        inline: true
-      },
+  const menu =
+    new StringSelectMenuBuilder()
 
-      {
-        name: "👹 想打的王",
-        value: row[7] || "-",
-        inline: false
-      },
+      .setCustomId(customId)
 
-      {
-        name: "🕒 可打時段",
-        value: row[8] || "-",
-        inline: false
-      },
+      .setPlaceholder(
+        placeholder
+      )
 
-      {
-        name: "📝 備註",
-        value: row[9] || "無",
-        inline: false
-      },
+      .setMinValues(1)
 
-      {
-        name: "✅ 狀態",
-        value: row[11] || "-",
-        inline: true
-      }
+      .setMaxValues(1)
 
-    );
+      .addOptions(options);
+
+
+  return new ActionRowBuilder()
+    .addComponents(menu);
 }
 
 
 // ==============================
-// 啟動突襲王報名系統
+// 我的報名
+// ==============================
+
+function signupSummaryEmbed(
+  signups,
+  weekRange
+) {
+
+  const embed =
+    new EmbedBuilder()
+
+      .setColor("#2ECC71")
+
+      .setTitle(
+        "📋 我的突襲王報名"
+      )
+
+      .setDescription(
+        `📅 **週次：${weekRange}**\n` +
+        `共 **${signups.length}** 隻角色已報名`
+      );
+
+
+  signups
+
+    .slice(0, 25)
+
+    .forEach(
+      ({ row }, index) => {
+
+        const text =
+
+          `🧙 ${row[4] || "-"}｜Lv.${row[5] || "-"}｜表功 ${row[6] || "-"}\n` +
+
+          `👹 ${row[7] || "-"}\n` +
+
+          `🕒 ${row[8] || "-"}\n` +
+
+          `📝 ${row[9] || "無"}`;
+
+
+        embed.addFields({
+
+          name:
+            `${index + 1}. 🎮 ${row[3] || "未命名角色"}`,
+
+          value:
+            text.slice(0, 1024),
+
+          inline:
+            false
+
+        });
+
+      }
+    );
+
+
+  if (
+    signups.length > 25
+  ) {
+
+    embed.setFooter({
+
+      text:
+        `目前顯示前 25 隻，共 ${signups.length} 隻角色`
+
+    });
+
+  }
+
+
+  return embed;
+}
+
+
+// ==============================
+// 截止提示
+// ==============================
+
+function closedMessage(weekRange) {
+
+  return (
+
+    "⛔ 本期突襲王報名已截止。\n\n" +
+
+    `📅 週次：**${weekRange}**\n` +
+
+    `⏰ 截止：**${getDeadlineText(weekRange)}**\n\n` +
+
+    "截止後無法新增、修改或取消報名。"
+
+  );
+}
+
+
+// ==============================
+// 啟動系統
 // ==============================
 
 function setupRaidSignup(client) {
 
 
   // ============================
-  // 管理員建立報名面板
+  // 管理員建立新一期面板
   // ============================
 
   client.on(
     "messageCreate",
     async message => {
 
+
       if (message.author.bot) {
         return;
       }
+
 
       if (!message.guild) {
         return;
@@ -879,7 +1095,9 @@ function setupRaidSignup(client) {
         message.content.trim() !==
         "-建立突襲報名"
       ) {
+
         return;
+
       }
 
 
@@ -911,41 +1129,90 @@ function setupRaidSignup(client) {
       }
 
 
+      const targetWeek =
+        getPanelWeekRange();
+
+
+      // 先檢查這一期是否已經有人報名
+      const existingRows =
+        await getAllRaidRows();
+
+
+      const hasTargetWeekData =
+        existingRows.some(
+          row =>
+
+            row[0] === targetWeek &&
+
+            row[1]
+
+        );
+
+
+      let cleared = false;
+
+
+      // 沒有新一期資料
+      // 才清除上一期
+      if (!hasTargetWeekData) {
+
+        await clearRaidSheetData();
+
+        cleared = true;
+
+      }
+
+
       await channel.send({
 
         embeds: [
-          getSignupPanelEmbed()
+
+          getSignupPanelEmbed(
+            targetWeek
+          )
+
         ],
 
         components: [
+
           getSignupPanelButtons()
+
         ]
 
       });
 
 
-      if (
-        message.channel.id !==
-        RAID_CHANNEL_ID
-      ) {
+      const statusText =
 
-        await message.reply(
-          "✅ 已在突襲王報名頻道建立面板。"
-        );
+        cleared
 
-      }
+          ? "✅ 已清除上一期試算表資料，並建立新一期突襲王報名面板。"
+
+          : "✅ 已建立報名面板。\n⚠️ 偵測到這一期已經有報名資料，為避免誤刪，所以沒有清除試算表。";
+
+
+      await message.reply(
+
+        `${statusText}\n` +
+
+        `📅 報名週次：${targetWeek}\n` +
+
+        `⏰ 截止：${getDeadlineText(targetWeek)}`
+
+      );
 
     }
   );
 
 
   // ============================
-  // Discord互動
+  // Discord 互動
   // ============================
 
   client.on(
     "interactionCreate",
     async interaction => {
+
 
       try {
 
@@ -959,107 +1226,277 @@ function setupRaidSignup(client) {
         ) {
 
 
+          const weekRange =
+            getWeekFromInteraction(
+              interaction
+            );
+
+
+          // =====================
           // 我要報名
+          // =====================
 
           if (
             interaction.customId ===
             "raid_signup_start"
           ) {
 
-            return interaction.showModal(
-              buildBasicInfoModal("new")
-            );
 
-          }
-
-
-          // 修改報名
-
-          if (
-            interaction.customId ===
-            "raid_signup_edit"
-          ) {
-
-            const existing =
-              await findCurrentWeekSignup(
-                interaction.user.id
-              );
-
-
-            if (!existing) {
+            if (
+              !isSignupOpen(
+                weekRange
+              )
+            ) {
 
               return interaction.reply({
 
                 content:
-                  "❌ 你本週還沒有報名資料，請先使用「我要報名」。",
+                  closedMessage(
+                    weekRange
+                  ),
 
-                ephemeral: true
+                ephemeral:
+                  true
 
               });
 
             }
 
 
+            signupSessions.set(
+
+              interaction.user.id,
+
+              {
+
+                mode:
+                  "new",
+
+                weekRange
+
+              }
+
+            );
+
+
             return interaction.showModal(
-              buildBasicInfoModal("edit")
+
+              buildBasicInfoModal(
+                "new"
+              )
+
             );
 
           }
 
 
+          // =====================
+          // 修改報名
+          // =====================
+
+          if (
+            interaction.customId ===
+            "raid_signup_edit"
+          ) {
+
+
+            if (
+              !isSignupOpen(
+                weekRange
+              )
+            ) {
+
+              return interaction.reply({
+
+                content:
+                  closedMessage(
+                    weekRange
+                  ),
+
+                ephemeral:
+                  true
+
+              });
+
+            }
+
+
+            const signups =
+              await findAllWeekSignups(
+
+                interaction.user.id,
+
+                weekRange
+
+              );
+
+
+            if (
+              signups.length === 0
+            ) {
+
+              return interaction.reply({
+
+                content:
+                  "❌ 這一期你還沒有報名資料，請先使用「我要報名」。",
+
+                ephemeral:
+                  true
+
+              });
+
+            }
+
+
+            return interaction.reply({
+
+              content:
+                "### ✏️ 選擇要修改的角色",
+
+              components: [
+
+                buildCharacterSelect(
+
+                  "raid_signup_edit_character",
+
+                  signups,
+
+                  "選擇要修改的角色"
+
+                )
+
+              ],
+
+              ephemeral:
+                true
+
+            });
+
+          }
+
+
+          // =====================
           // 取消報名
+          // =====================
 
           if (
             interaction.customId ===
             "raid_signup_cancel"
           ) {
 
-            await interaction.deferReply({
-              ephemeral: true
-            });
+
+            if (
+              !isSignupOpen(
+                weekRange
+              )
+            ) {
+
+              return interaction.reply({
+
+                content:
+                  closedMessage(
+                    weekRange
+                  ),
+
+                ephemeral:
+                  true
+
+              });
+
+            }
 
 
-            const success =
-              await cancelSignup(
-                interaction.user.id
+            const signups =
+              await findAllWeekSignups(
+
+                interaction.user.id,
+
+                weekRange
+
               );
 
 
-            return interaction.editReply(
+            if (
+              signups.length === 0
+            ) {
 
-              success
+              return interaction.reply({
 
-                ? "✅ 已取消你本週的突襲王報名。"
+                content:
+                  "❌ 找不到這一期的有效報名資料。",
 
-                : "❌ 找不到你本週的有效報名資料。"
+                ephemeral:
+                  true
 
-            );
+              });
+
+            }
+
+
+            return interaction.reply({
+
+              content:
+                "### ❌ 選擇要取消的角色\n" +
+                "選擇後會直接取消該角色的報名。",
+
+              components: [
+
+                buildCharacterSelect(
+
+                  "raid_signup_cancel_character",
+
+                  signups,
+
+                  "選擇要取消的角色"
+
+                )
+
+              ],
+
+              ephemeral:
+                true
+
+            });
 
           }
 
 
+          // =====================
           // 我的報名
+          // =====================
 
           if (
             interaction.customId ===
             "raid_signup_view"
           ) {
 
+
             await interaction.deferReply({
-              ephemeral: true
+
+              ephemeral:
+                true
+
             });
 
 
-            const existing =
-              await findCurrentWeekSignup(
-                interaction.user.id
+            const signups =
+              await findAllWeekSignups(
+
+                interaction.user.id,
+
+                weekRange
+
               );
 
 
-            if (!existing) {
+            if (
+              signups.length === 0
+            ) {
 
               return interaction.editReply(
-                "📭 你本週目前還沒有突襲王報名資料。"
+
+                "📭 這一期目前沒有你的突襲王報名資料。"
+
               );
 
             }
@@ -1068,9 +1505,15 @@ function setupRaidSignup(client) {
             return interaction.editReply({
 
               embeds: [
+
                 signupSummaryEmbed(
-                  existing.row
+
+                  signups,
+
+                  weekRange
+
                 )
+
               ]
 
             });
@@ -1081,7 +1524,7 @@ function setupRaidSignup(client) {
 
 
         // ========================
-        // 基本資料 Modal
+        // Modal
         // ========================
 
         if (
@@ -1104,53 +1547,116 @@ function setupRaidSignup(client) {
           }
 
 
+          const oldSession =
+            signupSessions.get(
+              interaction.user.id
+            ) || {};
+
+
+          const weekRange =
+
+            oldSession.weekRange ||
+
+            getPanelWeekRange();
+
+
+          if (
+            !isSignupOpen(
+              weekRange
+            )
+          ) {
+
+
+            signupSessions.delete(
+              interaction.user.id
+            );
+
+
+            return interaction.reply({
+
+              content:
+                closedMessage(
+                  weekRange
+                ),
+
+              ephemeral:
+                true
+
+            });
+
+          }
+
+
           const session = {
 
+            ...oldSession,
+
+
             mode:
+
               interaction.customId
                 .endsWith("_edit")
+
                 ? "edit"
+
                 : "new",
 
+
+            weekRange,
+
+
             discordName:
+
               interaction.member
                 ?.displayName ||
+
               interaction.user.username,
 
+
             characterName:
+
               interaction.fields
                 .getTextInputValue(
                   "character_name"
                 )
                 .trim(),
 
+
             job:
+
               interaction.fields
                 .getTextInputValue(
                   "job"
                 )
                 .trim(),
 
+
             level:
+
               interaction.fields
                 .getTextInputValue(
                   "level"
                 )
                 .trim(),
 
+
             power:
+
               interaction.fields
                 .getTextInputValue(
                   "power"
                 )
                 .trim(),
 
+
             note:
+
               interaction.fields
                 .getTextInputValue(
                   "note"
                 )
                 .trim(),
+
 
             bosses: [],
 
@@ -1162,22 +1668,32 @@ function setupRaidSignup(client) {
 
 
           signupSessions.set(
+
             interaction.user.id,
+
             session
+
           );
 
 
           return interaction.reply({
 
             content:
+
               "### 👹 第 2 步：選擇想打的王\n" +
+
               "可以一次選多個。",
 
+
             components: [
+
               buildBossSelect()
+
             ],
 
-            ephemeral: true
+
+            ephemeral:
+              true
 
           });
 
@@ -1193,6 +1709,180 @@ function setupRaidSignup(client) {
         ) {
 
 
+          // =====================
+          // 修改：選角色
+          // =====================
+
+          if (
+            interaction.customId ===
+            "raid_signup_edit_character"
+          ) {
+
+
+            const weekRange =
+              getWeekFromInteraction(
+                interaction
+              );
+
+
+            if (
+              !isSignupOpen(
+                weekRange
+              )
+            ) {
+
+              return interaction.update({
+
+                content:
+                  closedMessage(
+                    weekRange
+                  ),
+
+                components: []
+
+              });
+
+            }
+
+
+            const characterName =
+              interaction.values[0];
+
+
+            const existing =
+              await findWeekSignup(
+
+                interaction.user.id,
+
+                weekRange,
+
+                characterName
+
+              );
+
+
+            if (!existing) {
+
+              return interaction.update({
+
+                content:
+                  "❌ 找不到這隻角色的報名資料，可能已經取消。",
+
+                components: []
+
+              });
+
+            }
+
+
+            signupSessions.set(
+
+              interaction.user.id,
+
+              {
+
+                mode:
+                  "edit",
+
+                weekRange,
+
+                editingCharacterName:
+                  characterName
+
+              }
+
+            );
+
+
+            return interaction.showModal(
+
+              buildBasicInfoModal(
+
+                "edit",
+
+                existing.row
+
+              )
+
+            );
+
+          }
+
+
+          // =====================
+          // 取消：選角色
+          // =====================
+
+          if (
+            interaction.customId ===
+            "raid_signup_cancel_character"
+          ) {
+
+
+            const weekRange =
+              getWeekFromInteraction(
+                interaction
+              );
+
+
+            if (
+              !isSignupOpen(
+                weekRange
+              )
+            ) {
+
+              return interaction.update({
+
+                content:
+                  closedMessage(
+                    weekRange
+                  ),
+
+                components: []
+
+              });
+
+            }
+
+
+            const characterName =
+              interaction.values[0];
+
+
+            const success =
+              await cancelSignup(
+
+                interaction.user.id,
+
+                weekRange,
+
+                characterName
+
+              );
+
+
+            return interaction.update({
+
+              content:
+
+                success
+
+                  ? `✅ 已取消 **${characterName}** 的突襲王報名。\n其他角色的報名不受影響。`
+
+                  : "❌ 找不到這隻角色的有效報名資料。",
+
+
+              components: []
+
+            });
+
+          }
+
+
+          // =====================
+          // 取得報名流程
+          // =====================
+
           const session =
             signupSessions.get(
               interaction.user.id
@@ -1204,41 +1894,80 @@ function setupRaidSignup(client) {
             return interaction.reply({
 
               content:
-                "⚠️ 報名流程已逾時，請重新按「我要報名」。",
+                "⚠️ 報名流程已逾時，請重新按「我要報名」或「修改報名」。",
 
-              ephemeral: true
+              ephemeral:
+                true
 
             });
 
           }
 
 
+          if (
+            !isSignupOpen(
+              session.weekRange
+            )
+          ) {
+
+
+            signupSessions.delete(
+              interaction.user.id
+            );
+
+
+            return interaction.update({
+
+              content:
+                closedMessage(
+                  session.weekRange
+                ),
+
+              components: []
+
+            });
+
+          }
+
+
+          // =====================
           // 選王
+          // =====================
 
           if (
             interaction.customId ===
             "raid_signup_bosses"
           ) {
 
+
             session.bosses =
               interaction.values;
 
 
             signupSessions.set(
+
               interaction.user.id,
+
               session
+
             );
 
 
             return interaction.update({
 
               content:
-                "### 🕒 第 3 步：星期一～四\n" +
+
+                "### 🕒 第 3 步：星期二～五\n" +
+
                 "請直接勾選真正可以參加的「星期＋時間」。\n\n" +
-                "例如星期二只有 22:00，就只勾「星期二 22:00」。",
+
+                "如果星期二～五都不行，請選「星期二～五都無法參加」。",
+
 
               components: [
-                buildWeekdayTimeSelect()
+
+                buildTimeSelect1()
+
               ]
 
             });
@@ -1246,32 +1975,69 @@ function setupRaidSignup(client) {
           }
 
 
-          // 星期一～四
+          // =====================
+          // 星期二～五
+          // =====================
 
           if (
             interaction.customId ===
             "raid_signup_times_1"
           ) {
 
-            session.times1 =
+
+            const selected =
               interaction.values;
 
 
+            if (
+
+              selected.includes("NONE") &&
+
+              selected.length > 1
+
+            ) {
+
+              return interaction.reply({
+
+                content:
+                  "❌「都無法參加」不能和其他時段一起選，請重新選擇。",
+
+                ephemeral:
+                  true
+
+              });
+
+            }
+
+
+            session.times1 =
+              selected;
+
+
             signupSessions.set(
+
               interaction.user.id,
+
               session
+
             );
 
 
             return interaction.update({
 
               content:
-                "### 🕒 第 4 步：星期五～日\n" +
+
+                "### 🕒 第 4 步：星期六、日、一\n" +
+
                 "勾選可以參加的時段。\n\n" +
-                "如果這三天都不行，請選「星期五～日都無法參加」。",
+
+                "如果星期六～一都不行，請選「星期六～一都無法參加」。",
+
 
               components: [
-                buildWeekendTimeSelect()
+
+                buildTimeSelect2()
+
               ]
 
             });
@@ -1279,7 +2045,9 @@ function setupRaidSignup(client) {
           }
 
 
-          // 星期五～日
+          // =====================
+          // 星期六、日、一
+          // =====================
 
           if (
             interaction.customId ===
@@ -1292,8 +2060,11 @@ function setupRaidSignup(client) {
 
 
             if (
+
               selected.includes("NONE") &&
+
               selected.length > 1
+
             ) {
 
               return interaction.reply({
@@ -1301,7 +2072,8 @@ function setupRaidSignup(client) {
                 content:
                   "❌「都無法參加」不能和其他時段一起選，請重新選擇。",
 
-                ephemeral: true
+                ephemeral:
+                  true
 
               });
 
@@ -1319,8 +2091,10 @@ function setupRaidSignup(client) {
               ...(session.times2 || [])
 
             ].filter(
+
               value =>
                 value !== "NONE"
+
             );
 
 
@@ -1333,7 +2107,8 @@ function setupRaidSignup(client) {
                 content:
                   "❌ 至少要選擇一個可以參加的時段。",
 
-                ephemeral: true
+                ephemeral:
+                  true
 
               });
 
@@ -1379,7 +2154,7 @@ function setupRaidSignup(client) {
 
                 .setDescription(
 
-                  `📅 **${getWeekRange()}**\n\n` +
+                  `📅 **${session.weekRange}**\n\n` +
 
                   `🎮 **角色：** ${session.characterName}\n` +
 
@@ -1426,22 +2201,30 @@ function setupRaidSignup(client) {
 
 
         console.error(
+
           "突襲王報名系統錯誤：",
+
           error
+
         );
 
 
         if (
+
           interaction.deferred ||
+
           interaction.replied
+
         ) {
+
 
           await interaction.followUp({
 
             content:
               "❌ 系統發生錯誤，請稍後再試。",
 
-            ephemeral: true
+            ephemeral:
+              true
 
           }).catch(() => {});
 
@@ -1454,7 +2237,8 @@ function setupRaidSignup(client) {
             content:
               "❌ 系統發生錯誤，請稍後再試。",
 
-            ephemeral: true
+            ephemeral:
+              true
 
           }).catch(() => {});
 
