@@ -18,6 +18,10 @@ const {
   setupRaidSignup
 } = require("./src/raidSignup");
 
+const {
+  setupRaidManager
+} = require("./src/raidManager");
+
 if (!client || typeof client.on !== "function") {
   console.error("❌ Discord client 載入失敗");
   console.error(
@@ -31,6 +35,7 @@ setupRegistration(client);
 setupSupportRole(client);
 setupBossTracker(client);
 setupRaidSignup(client);
+setupRaidManager(client);
 
 client.login(process.env.DISCORD_TOKEN).catch(error => {
   console.error("Discord 登入失敗：", error);
