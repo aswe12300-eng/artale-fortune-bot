@@ -527,6 +527,177 @@ function buildTimeSelect(
 }
 
 // ==============================
+// 週次＋突襲王 選單
+// ==============================
+
+async function buildWeekBossOptions() {
+  const rows =
+    await getRaidRows();
+
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const nextWeek =
+    getNextRaidWeekRange();
+
+  const map =
+    new Map();
+
+  for (const row of rows) {
+
+    const weekRange =
+      row[0];
+
+    const status =
+      row[11];
+
+    if (
+      status === "已取消"
+    ) {
+      continue;
+    }
+
+    if (
+      weekRange !== currentWeek &&
+      weekRange !== nextWeek
+    ) {
+      continue;
+    }
+
+    const bosses =
+      String(row[7] || "")
+        .split("、")
+        .map(v => v.trim())
+        .filter(Boolean);
+
+    for (
+      const bossName of bosses
+    ) {
+      const key =
+        `${weekRange}|${bossName}`;
+
+      if (
+        !map.has(key)
+      ) {
+        map.set(
+          key,
+          new Set()
+        );
+      }
+
+      map.get(key)
+        .add(
+          `${row[1]}|${row[3]}`
+        );
+    }
+  }
+
+  return [
+    ...map.entries()
+  ].map(
+    ([key, players]) => {
+
+      const splitIndex =
+        key.lastIndexOf("|");
+
+      return {
+        weekRange:
+          key.slice(
+            0,
+            splitIndex
+          ),
+
+        bossName:
+          key.slice(
+            splitIndex + 1
+          ),
+
+        count:
+          players.size
+      };
+    }
+  );
+}
+
+
+function buildWeekBossSelect(
+  options
+) {
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const menu =
+    new StringSelectMenuBuilder()
+      .setCustomId(
+        "raid_manager_week_boss"
+      )
+      .setPlaceholder(
+        "📅 選擇週次＋突襲王"
+      )
+      .setMinValues(1)
+      .setMaxValues(1);
+
+  const discordOptions =
+    options
+      .slice(0, 25)
+      .map(item => {
+
+        const weekText =
+          item.weekRange ===
+          currentWeek
+            ? "本週"
+            : "下週";
+
+        let emoji =
+          "👹";
+
+        if (
+          item.bossName ===
+          "龍王"
+        ) {
+          emoji =
+            "🐲";
+        }
+
+        if (
+          item.bossName ===
+          "炎魔"
+        ) {
+          emoji =
+            "🔥";
+        }
+
+        if (
+          item.bossName ===
+          "困拉"
+        ) {
+          emoji =
+            "⚔️";
+        }
+
+        return {
+          label:
+            `${weekText}｜${item.bossName}`,
+
+          description:
+            `目前 ${item.count} 隻角色報名`,
+
+          value:
+            `${item.weekRange}|${item.bossName}`,
+
+          emoji
+        };
+      });
+
+  menu.addOptions(
+    discordOptions
+  );
+
+  return new ActionRowBuilder()
+    .addComponents(menu);
+}
+
+// ==============================
 // 開始排團按鈕
 // ==============================
 
@@ -860,16 +1031,39 @@ function setupRaidManager(client) {
         );
       }
 
+     const weekBossOptions =
+  await buildWeekBossOptions();
 
-      return message.reply({
-        embeds: [
-          buildManagerEmbed()
-        ],
+if (
+  weekBossOptions.length === 0
+) {
+  return message.reply({
+    content:
+      "目前本週與下週都沒有突襲報名資料。"
+  });
+}
 
-        components: [
-          buildWeekSelect()
-        ]
-      });
+return message.reply({
+  embeds: [
+    new EmbedBuilder()
+      .setColor(
+        "#F1C40F"
+      )
+      .setTitle(
+        "⚔️ EtheReal｜突襲名單"
+      )
+      .setDescription(
+        "請先選擇「週次＋突襲王」。"
+      )
+  ],
+
+  components: [
+    buildWeekBossSelect(
+      weekBossOptions
+    )
+  ]
+});
+     
     }
   );
 
@@ -997,6 +1191,29 @@ if (
               true
           });
         }
+
+        // ==============================
+// 週次＋突襲王
+// ==============================
+
+if (
+  interaction.customId ===
+  "raid_manager_week_boss"
+) {
+  // 👈 你剛剛貼給我的整段程式
+}
+
+
+// =====================
+// 選週次
+// =====================
+
+if (
+  interaction.customId ===
+  "raid_manager_week"
+) {
+  // 原本程式...
+}
 
 
         // =====================
