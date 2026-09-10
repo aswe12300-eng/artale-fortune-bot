@@ -184,16 +184,42 @@ function getWeekFromInteraction(interaction) {
 // ＝ 星期一 00:00
 // ==============================
 
-function getSignupDeadline(weekRange) {
+function getSignupDeadline(
+  weekRange
+) {
   const parts =
     weekRange.split("～");
 
-  if (parts.length !== 2) {
+  if (
+    parts.length !== 2
+  ) {
     return null;
   }
 
-  // 週次結束日期本身就是星期一
-  return parseYmd(parts[1]);
+  // 週次開始日是星期二
+  const startDate =
+    parseYmd(
+      parts[0]
+    );
+
+  // 往前一天 = 星期一 00:00
+  const deadline =
+    new Date(
+      startDate
+    );
+
+  deadline.setDate(
+    deadline.getDate() - 1
+  );
+
+  deadline.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  return deadline;
 }
 
 function isSignupOpen(weekRange) {
