@@ -435,32 +435,28 @@ function buildBossSelect(
       )
       .setMinValues(1)
       .setMaxValues(1)
-      .addOptions(
-        {
-          label: "普拉",
-          value:
-            `${weekRange}|普拉`,
-          emoji: "👹"
-        },
-        {
-          label: "炎魔",
-          value:
-            `${weekRange}|炎魔`,
-          emoji: "🔥"
-        },
-        {
-          label: "困拉",
-          value:
-            `${weekRange}|困拉`,
-          emoji: "⚔️"
-        },
-        {
-          label: "龍王",
-          value:
-            `${weekRange}|龍王`,
-          emoji: "🐲"
-        }
-      );
+     .addOptions(
+  {
+    label: "普拉",
+    value: `${weekRange}|普拉`,
+    emoji: "⏰"
+  },
+  {
+    label: "炎魔",
+    value: `${weekRange}|炎魔`,
+    emoji: "🔥"
+  },
+  {
+    label: "困拉",
+    value: `${weekRange}|困拉`,
+    emoji: "⏱️"
+  },
+  {
+    label: "龍王",
+    value: `${weekRange}|龍王`,
+    emoji: "🐲"
+  }
+);
 
   return new ActionRowBuilder()
     .addComponents(menu);
@@ -648,32 +644,31 @@ function buildWeekBossSelect(
             ? "本週"
             : "下週";
 
-        let emoji =
-          "👹";
+        let emoji = "👹";
 
-        if (
-          item.bossName ===
-          "龍王"
-        ) {
-          emoji =
-            "🐲";
-        }
+if (
+  item.bossName === "普拉"
+) {
+  emoji = "⏰";
+}
 
-        if (
-          item.bossName ===
-          "炎魔"
-        ) {
-          emoji =
-            "🔥";
-        }
+if (
+  item.bossName === "炎魔"
+) {
+  emoji = "🔥";
+}
 
-        if (
-          item.bossName ===
-          "困拉"
-        ) {
-          emoji =
-            "⚔️";
-        }
+if (
+  item.bossName === "困拉"
+) {
+  emoji = "⏱️";
+}
+
+if (
+  item.bossName === "龍王"
+) {
+  emoji = "🐲";
+}
 
         return {
           label:
