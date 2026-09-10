@@ -554,7 +554,7 @@ function buildAnnouncementEmbed(
           .map(
             (player, index) =>
               `${index + 1}. **${player.characterName}**｜${player.job}｜Lv.${player.level}\n` +
-              `👤 ${player.discordName}`
+              `👤 ${player.discordName}｜<@${player.discordId}>`
           )
           .join("\n");
     }
@@ -806,13 +806,53 @@ function setupRaidTeamBuilder(
             }
 
 
-            await channel.send({
-              embeds: [
-                buildAnnouncementEmbed(
-                  session
-                )
-              ]
-            });
+            // ==============================
+// 整理本場所有 Discord 成員
+// 同一個人有多隻角色也只標記一次
+// ==============================
+
+const allPlayers =
+  teamNames.flatMap(
+    teamName =>
+      session.teams[teamName] || []
+  );
+
+const uniqueDiscordIds =
+  [
+    ...new Set(
+      allPlayers
+        .map(player => player.discordId)
+        .filter(Boolean)
+    )
+  ];
+
+const mentions =
+  uniqueDiscordIds
+    .map(id => `<@${id}>`)
+    .join(" ");
+
+
+// ==============================
+// 發布正式公告
+// ==============================
+
+await channel.send({
+  content:
+    mentions.length > 0
+      ? `📣 **本場突襲成員請注意！**\n${mentions}`
+      : "📣 **本場突襲公告**",
+
+  embeds: [
+    buildAnnouncementEmbed(
+      session
+    )
+  ],
+
+  allowedMentions: {
+    users:
+      uniqueDiscordIds
+  }
+});
 
 
             return interaction.reply({
