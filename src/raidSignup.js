@@ -61,32 +61,48 @@ function formatDate(date) {
 
 
 // ==============================
-// 取得本週週一～週日
+// 取得本週二～下周一
 // ==============================
 
 function getWeekRange() {
   const now = getTaipeiDate();
 
   const day = now.getDay();
+  // 0 = 星期日
+  // 1 = 星期一
+  // 2 = 星期二
+  // 3 = 星期三
+  // 4 = 星期四
+  // 5 = 星期五
+  // 6 = 星期六
 
-  const diffToMonday =
-    day === 0
-      ? -6
-      : 1 - day;
+  let diffToTuesday;
 
-  const monday = new Date(now);
+  // 每週二為新週期第一天
+  if (day === 0) {
+    // 星期日 → 往前 5 天到星期二
+    diffToTuesday = -5;
+  } else if (day === 1) {
+    // 星期一 → 往前 6 天到上週二
+    diffToTuesday = -6;
+  } else {
+    // 星期二～星期六
+    diffToTuesday = 2 - day;
+  }
+
+  const tuesday = new Date(now);
+
+  tuesday.setDate(
+    now.getDate() + diffToTuesday
+  );
+
+  const monday = new Date(tuesday);
 
   monday.setDate(
-    now.getDate() + diffToMonday
+    tuesday.getDate() + 6
   );
 
-  const sunday = new Date(monday);
-
-  sunday.setDate(
-    monday.getDate() + 6
-  );
-
-  return `${formatDate(monday)}～${formatDate(sunday)}`;
+  return `${formatDate(tuesday)}～${formatDate(monday)}`;
 }
 
 
