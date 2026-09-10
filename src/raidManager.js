@@ -878,51 +878,19 @@ function buildTimeDetailEmbed(
       )
       .setDescription(
         `📅 **${weekRange}**\n` +
-        `👥 共 **${rows.length}** 隻角色可以參加\n\n` +
-        "下方會顯示「Discord 報名者」以及實際角色資料。"
+        `👥 可參加：**${rows.length} 人**`
       );
-
 
   rows
     .slice(0, 25)
     .forEach(
       (row, index) => {
 
-        const allTimes =
-          parseTimes(
-            row[8]
-          );
-
-        const otherTimes =
-          allTimes
-            .filter(
-              item =>
-                !(
-                  item.day === day &&
-                  item.time === time
-                )
-            )
-            .map(
-              item =>
-                `${item.day.replace(
-                  "星期",
-                  "週"
-                )}${item.time}`
-            );
-
-        const otherText =
-          otherTimes.length > 0
-            ? otherTimes.join("、")
-            : "無其他時段";
-
-
         const discordName =
-          row[2] ||
-          "未知成員";
+          row[2] || "未知成員";
 
         const characterName =
-          row[3] ||
-          "未命名角色";
+          row[3] || "未命名角色";
 
         const job =
           row[4] || "-";
@@ -934,41 +902,36 @@ function buildTimeDetailEmbed(
           row[6] || "-";
 
         const note =
-          row[9] || "無";
+          row[9] || "";
 
+        let value =
+          `👤 ${discordName}`;
 
-        let detailText =
-  `👤 ${discordName}\n` +
-  `🕒 其他：${otherText}`;
+        if (
+          note &&
+          note !== "無"
+        ) {
+          value +=
+            `\n📝 ${note}`;
+        }
 
-if (
-  note &&
-  note !== "無"
-) {
-  detailText +=
-    `\n📝 ${note}`;
-}
+        embed.addFields({
+          name:
+            `${index + 1}. ${characterName}｜${job}｜Lv.${level}｜表功 ${power}`,
 
-embed.addFields({
-  name:
-    `${index + 1}. ${characterName}｜${job}｜Lv.${level}｜表功 ${power}`,
+          value,
 
-  value:
-    detailText,
-
-  inline:
-    false
-});
+          inline: false
+        });
       }
     );
-
 
   if (
     rows.length > 25
   ) {
     embed.setFooter({
       text:
-        `目前顯示前 25 隻，共 ${rows.length} 隻角色`
+        `目前顯示前 25 人，共 ${rows.length} 人`
     });
   }
 
