@@ -1,10 +1,21 @@
 const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   EmbedBuilder
 } = require("discord.js");
 
 const { google } = require("googleapis");
+
+const {
+  createTeamSession,
+  buildTeamEmbed,
+  buildTeamButtons
+} = require("./raidTeamBuilder");
+
+const raidManagerSelections =
+  new Map();
 
 // ==============================
 // 基本設定
@@ -497,6 +508,8 @@ function buildTimeSelect(
         }
       );
 
+  
+
   const menu =
     new StringSelectMenuBuilder()
       .setCustomId(
@@ -511,6 +524,32 @@ function buildTimeSelect(
 
   return new ActionRowBuilder()
     .addComponents(menu);
+}
+
+// ==============================
+// 開始排團按鈕
+// ==============================
+
+function buildStartTeamButton(
+  weekRange,
+  bossName,
+  day,
+  time
+) {
+  const button =
+    new ButtonBuilder()
+      .setCustomId(
+        "raid_manager_start_team"
+      )
+      .setLabel(
+        "👥 開始排團"
+      )
+      .setStyle(
+        ButtonStyle.Success
+      );
+
+  return new ActionRowBuilder()
+    .addComponents(button);
 }
 
 
@@ -844,6 +883,88 @@ function setupRaidManager(client) {
     async interaction => {
 
       try {
+        // =====================
+// 開始排團按鈕
+// =====================
+
+if (
+  interaction.isButton() &&
+  interaction.customId ===
+    "raid_manager_start_team"
+) {
+  if (
+    !hasManagerPermission(
+      interaction
+    )
+  ) {
+    return interaction.reply({
+      content:
+        "❌ 只有管理員可以使用排團功能。",
+      ephemeral:
+        true
+    });
+  }
+
+  const selected =
+    raidManagerSelections.get(
+      interaction.user.id
+    );
+
+  if (
+    !selected
+  ) {
+    return interaction.reply({
+      content:
+        "⚠️ 找不到剛剛選擇的時段，請重新從 `-突襲名單` 選一次。",
+      ephemeral:
+        true
+    });
+  }
+
+  const {
+    weekRange,
+    bossName,
+    day,
+    time
+  } = selected;
+
+  const session =
+    await createTeamSession(
+      interaction.user.id,
+      weekRange,
+      bossName,
+      day,
+      time
+    );
+
+  if (
+    session.players.length === 0
+  ) {
+    return interaction.reply({
+      content:
+        "⚠️ 這個時段目前沒有可排團的角色。",
+      ephemeral:
+        true
+    });
+  }
+
+  return interaction.reply({
+    embeds: [
+      buildTeamEmbed(
+        session
+      )
+    ],
+
+    components: [
+      buildTeamButtons(
+        session
+      )
+    ],
+
+    ephemeral:
+      true
+  });
+}
 
         if (
           !interaction.isStringSelectMenu()
@@ -1091,31 +1212,48 @@ function setupRaidManager(client) {
             );
 
 
-          return interaction.update({
-            embeds: [
-              buildTimeDetailEmbed(
-                weekRange,
-                bossName,
-                day,
-                time,
-                available
-              )
-            ],
+          raidManagerSelections.set(
+  interaction.user.id,
+  {
+    weekRange,
+    bossName,
+    day,
+    time
+  }
+);
 
-            components: [
-              buildWeekSelect(),
+return interaction.update({
+  embeds: [
+    buildTimeDetailEmbed(
+      weekRange,
+      bossName,
+      day,
+      time,
+      available
+    )
+  ],
 
-              buildBossSelect(
-                weekRange
-              ),
+  components: [
+    buildWeekSelect(),
 
-              buildTimeSelect(
-                weekRange,
-                bossName,
-                stats
-              )
-            ]
-          });
+    buildBossSelect(
+      weekRange
+    ),
+
+    buildTimeSelect(
+      weekRange,
+      bossName,
+      stats
+    ),
+
+    buildStartTeamButton(
+      weekRange,
+      bossName,
+      day,
+      time
+    )
+  ]
+});
         }
 
 
