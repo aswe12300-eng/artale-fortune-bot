@@ -490,51 +490,28 @@ function setupRpsGame(client) {
           components: []
         });
 
-        const challenger =
-          await interaction.guild.members.fetch(
-            game.player1Id
-          );
+        await interaction.followUp({
+  content:
+    "🎮 對戰開始！\n雙方請按下方按鈕秘密出拳。",
 
-        const opponent =
-          await interaction.guild.members.fetch(
-            game.player2Id
-          );
-
-        try {
-          await challenger.send({
-            content:
-              "🎮 輪到你出拳！",
-
-            components: [
-              buildChoiceButtons(
-                gameId
-              )
-            ]
-          });
-        } catch (error) {
-          console.error(
-            "無法私訊發起人：",
-            error
-          );
-        }
-
-        try {
-          await opponent.send({
-            content:
-              "🎮 輪到你出拳！",
-
-            components: [
-              buildChoiceButtons(
-                gameId
-              )
-            ]
-          });
-        } catch (error) {
-          console.error(
-            "無法私訊應戰者：",
-            error
-          );
-        }
+  components: [
+    new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            `rps_open_${gameId}`
+          )
+          .setLabel(
+            "我要出拳"
+          )
+          .setEmoji(
+            "🎮"
+          )
+          .setStyle(
+            ButtonStyle.Primary
+          )
+      )
+});
 
         return;
       }
@@ -544,6 +521,95 @@ function setupRpsGame(client) {
           "rps_cancel_"
         )
       ) {
+
+        if (
+  interaction.customId.startsWith(
+    "rps_open_"
+  )
+) {
+  const gameId =
+    interaction.customId.replace(
+      "rps_open_",
+      ""
+    );
+
+  const game =
+    games.get(
+      gameId
+    );
+
+  if (
+    !game ||
+    game.status !==
+      "playing"
+  ) {
+    await interaction.reply({
+      content:
+        "❌ 這場猜拳已經結束或失效。",
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  const userId =
+    interaction.user.id;
+
+  if (
+    userId !==
+      game.player1Id &&
+    userId !==
+      game.player2Id
+  ) {
+    await interaction.reply({
+      content:
+        "❌ 你不是這場猜拳的玩家。",
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  const alreadyChosen =
+    userId ===
+      game.player1Id
+      ? game.player1Choice
+      : game.player2Choice;
+
+  if (
+    alreadyChosen
+  ) {
+    await interaction.reply({
+      content:
+        "✅ 你已經出過拳了！",
+
+      ephemeral:
+        true
+    });
+
+    return;
+  }
+
+  await interaction.reply({
+    content:
+      "🎮 請秘密選擇你要出的拳：",
+
+    components: [
+      buildChoiceButtons(
+        gameId
+      )
+    ],
+
+    ephemeral:
+      true
+  });
+
+  return;
+}
         const gameId =
           interaction.customId.replace(
             "rps_cancel_",
