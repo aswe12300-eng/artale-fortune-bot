@@ -490,7 +490,7 @@ function setupRpsGame(client) {
           components: []
         });
 
-        await interaction.followUp({
+await interaction.followUp({
   content:
     "🎮 對戰開始！\n雙方請按下方按鈕秘密出拳。",
 
@@ -511,17 +511,11 @@ function setupRpsGame(client) {
             ButtonStyle.Primary
           )
       )
+  ]
 });
 
         return;
       }
-
-      if (
-        interaction.customId.startsWith(
-          "rps_cancel_"
-        )
-      ) {
-
         if (
   interaction.customId.startsWith(
     "rps_open_"
@@ -610,7 +604,13 @@ function setupRpsGame(client) {
 
   return;
 }
-        const gameId =
+
+      if (
+  interaction.customId.startsWith(
+    "rps_cancel_"
+  )
+) {
+      const gameId =
           interaction.customId.replace(
             "rps_cancel_",
             ""
