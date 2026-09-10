@@ -18,6 +18,13 @@ const raidManagerSelections =
   new Map();
 
 // ==============================
+// 全部名單分頁暫存
+// ==============================
+
+const raidAllListSessions =
+  new Map();
+
+// ==============================
 // 基本設定
 // ==============================
 
@@ -718,6 +725,355 @@ function buildStartTeamButton(
     .addComponents(button);
 }
 
+// ==============================
+// 查看全部名單按鈕
+// ==============================
+
+function buildAllListButton() {
+  const button =
+    new ButtonBuilder()
+      .setCustomId(
+        "raid_manager_all_list"
+      )
+      .setLabel(
+        "📋 查看全部名單"
+      )
+      .setStyle(
+        ButtonStyle.Secondary
+      );
+
+  return new ActionRowBuilder()
+    .addComponents(button);
+}
+
+function getBossEmoji(
+  bossName
+) {
+  if (
+    bossName === "普拉"
+  ) {
+    return "⏰";
+  }
+
+  if (
+    bossName === "炎魔"
+  ) {
+    return "🔥";
+  }
+
+  if (
+    bossName === "困拉"
+  ) {
+    return "⏱️";
+  }
+
+  if (
+    bossName === "龍王"
+  ) {
+    return "🐲";
+  }
+
+  return "👹";
+}
+
+// ==============================
+// 建立全部突襲名單分頁
+// ==============================
+
+async function buildAllRaidListPages() {
+  const rows =
+    await getRaidRows();
+
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const nextWeek =
+    getNextRaidWeekRange();
+
+  const activeRows =
+    rows.filter(
+      row =>
+        (
+          row[0] === currentWeek ||
+          row[0] === nextWeek
+        ) &&
+        row[11] !== "已取消"
+    );
+
+  const groups =
+    new Map();
+
+  for (
+    const row of activeRows
+  ) {
+    const weekRange =
+      row[0];
+
+    const bosses =
+      String(
+        row[7] || ""
+      )
+        .split("、")
+        .map(
+          v => v.trim()
+        )
+        .filter(Boolean);
+
+    for (
+      const bossName of bosses
+    ) {
+      const key =
+        `${weekRange}|${bossName}`;
+
+      if (
+        !groups.has(key)
+      ) {
+        groups.set(
+          key,
+          []
+        );
+      }
+
+      groups
+        .get(key)
+        .push(row);
+    }
+  }
+
+
+  const bossOrder = [
+    "普拉",
+    "炎魔",
+    "困拉",
+    "龍王"
+  ];
+
+  const sortedGroups =
+    [...groups.entries()]
+      .sort(
+        (a, b) => {
+
+          const [
+            weekA,
+            bossA
+          ] =
+            a[0].split("|");
+
+          const [
+            weekB,
+            bossB
+          ] =
+            b[0].split("|");
+
+          if (
+            weekA !== weekB
+          ) {
+            if (
+              weekA === currentWeek
+            ) {
+              return -1;
+            }
+
+            if (
+              weekB === currentWeek
+            ) {
+              return 1;
+            }
+          }
+
+          return (
+            bossOrder.indexOf(
+              bossA
+            ) -
+            bossOrder.indexOf(
+              bossB
+            )
+          );
+        }
+      );
+
+
+  const pages = [];
+
+  // 每頁最多顯示 10 位
+  const PAGE_SIZE = 10;
+
+
+  for (
+    const [key, groupRows]
+    of sortedGroups
+  ) {
+    const splitIndex =
+      key.lastIndexOf("|");
+
+    const weekRange =
+      key.slice(
+        0,
+        splitIndex
+      );
+
+    const bossName =
+      key.slice(
+        splitIndex + 1
+      );
+
+    const weekText =
+      weekRange === currentWeek
+        ? "本週"
+        : "下週";
+
+
+    for (
+      let start = 0;
+      start < groupRows.length;
+      start += PAGE_SIZE
+    ) {
+      const chunk =
+        groupRows.slice(
+          start,
+          start + PAGE_SIZE
+        );
+
+
+      let listText = "";
+
+
+      chunk.forEach(
+        (row, index) => {
+
+          const discordName =
+            row[2] ||
+            "未知成員";
+
+          const characterName =
+            row[3] ||
+            "未命名角色";
+
+          const job =
+            row[4] || "-";
+
+          const level =
+            row[5] || "-";
+
+          const power =
+            row[6] || "-";
+
+          const times =
+            parseTimes(
+              row[8]
+            )
+              .map(
+                item =>
+                  `${item.day.replace(
+                    "星期",
+                    "週"
+                  )}${item.time}`
+              )
+              .join("、");
+
+          const note =
+            row[9] || "";
+
+
+          listText +=
+            `**${start + index + 1}. ${characterName}**｜${job}｜Lv.${level}｜表功 ${power}\n` +
+            `👤 ${discordName}\n` +
+            `🕒 ${times || "未填寫時段"}`;
+
+
+          if (
+            note &&
+            note !== "無"
+          ) {
+            listText +=
+              `\n📝 ${note}`;
+          }
+
+
+          listText +=
+            "\n\n";
+        }
+      );
+
+
+      const embed =
+        new EmbedBuilder()
+          .setColor(
+            "#3498DB"
+          )
+          .setTitle(
+            `📋 EtheReal｜全部突襲名單`
+          )
+          .setDescription(
+            `📅 **${weekText}｜${weekRange}**\n` +
+            `${getBossEmoji(
+              bossName
+            )} **${bossName}｜共 ${groupRows.length} 人**\n\n` +
+            listText
+          );
+
+
+      pages.push(
+        embed
+      );
+    }
+  }
+
+
+  return pages;
+}
+
+// ==============================
+// 全部名單分頁按鈕
+// ==============================
+
+function buildAllListNavigation(
+  currentPage,
+  totalPages
+) {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_all_prev"
+        )
+        .setLabel(
+          "◀ 上一頁"
+        )
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+        .setDisabled(
+          currentPage <= 0
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_all_next"
+        )
+        .setLabel(
+          "下一頁 ▶"
+        )
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+        .setDisabled(
+          currentPage >=
+          totalPages - 1
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_all_close"
+        )
+        .setLabel(
+          "關閉"
+        )
+        .setStyle(
+          ButtonStyle.Danger
+        )
+    );
+}
 
 // ==============================
 // 首頁
@@ -1024,11 +1380,13 @@ return message.reply({
       )
   ],
 
-  components: [
-    buildWeekBossSelect(
-      weekBossOptions
-    )
-  ]
+components: [
+  buildWeekBossSelect(
+    weekBossOptions
+  ),
+
+  buildAllListButton()
+]
 });
      
     }
@@ -1044,6 +1402,224 @@ return message.reply({
     async interaction => {
 
       try {
+
+        // ==============================
+// 查看全部名單
+// ==============================
+
+if (
+  interaction.isButton() &&
+  interaction.customId ===
+    "raid_manager_all_list"
+) {
+  if (
+    !hasManagerPermission(
+      interaction
+    )
+  ) {
+    return interaction.reply({
+      content:
+        "❌ 只有管理員可以查看全部突襲名單。",
+      ephemeral:
+        true
+    });
+  }
+
+
+  const pages =
+    await buildAllRaidListPages();
+
+
+  if (
+    pages.length === 0
+  ) {
+    return interaction.reply({
+      content:
+        "目前本週與下週都沒有有效的突襲報名。",
+      ephemeral:
+        true
+    });
+  }
+
+
+  raidAllListSessions.set(
+    interaction.user.id,
+    {
+      pages,
+      page: 0
+    }
+  );
+
+
+  pages[0].setFooter({
+    text:
+      `第 1 / ${pages.length} 頁`
+  });
+
+
+  return interaction.reply({
+    embeds: [
+      pages[0]
+    ],
+
+    components: [
+      buildAllListNavigation(
+        0,
+        pages.length
+      )
+    ],
+
+    ephemeral:
+      true
+  });
+}
+
+
+// ==============================
+// 全部名單：上一頁
+// ==============================
+
+if (
+  interaction.isButton() &&
+  interaction.customId ===
+    "raid_manager_all_prev"
+) {
+  const session =
+    raidAllListSessions.get(
+      interaction.user.id
+    );
+
+
+  if (
+    !session
+  ) {
+    return interaction.reply({
+      content:
+        "⚠️ 名單已失效，請重新按「查看全部名單」。",
+      ephemeral:
+        true
+    });
+  }
+
+
+  session.page =
+    Math.max(
+      0,
+      session.page - 1
+    );
+
+
+  const embed =
+    session.pages[
+      session.page
+    ];
+
+
+  embed.setFooter({
+    text:
+      `第 ${session.page + 1} / ${session.pages.length} 頁`
+  });
+
+
+  return interaction.update({
+    embeds: [
+      embed
+    ],
+
+    components: [
+      buildAllListNavigation(
+        session.page,
+        session.pages.length
+      )
+    ]
+  });
+}
+
+
+// ==============================
+// 全部名單：下一頁
+// ==============================
+
+if (
+  interaction.isButton() &&
+  interaction.customId ===
+    "raid_manager_all_next"
+) {
+  const session =
+    raidAllListSessions.get(
+      interaction.user.id
+    );
+
+
+  if (
+    !session
+  ) {
+    return interaction.reply({
+      content:
+        "⚠️ 名單已失效，請重新按「查看全部名單」。",
+      ephemeral:
+        true
+    });
+  }
+
+
+  session.page =
+    Math.min(
+      session.pages.length - 1,
+      session.page + 1
+    );
+
+
+  const embed =
+    session.pages[
+      session.page
+    ];
+
+
+  embed.setFooter({
+    text:
+      `第 ${session.page + 1} / ${session.pages.length} 頁`
+  });
+
+
+  return interaction.update({
+    embeds: [
+      embed
+    ],
+
+    components: [
+      buildAllListNavigation(
+        session.page,
+        session.pages.length
+      )
+    ]
+  });
+}
+
+
+// ==============================
+// 全部名單：關閉
+// ==============================
+
+if (
+  interaction.isButton() &&
+  interaction.customId ===
+    "raid_manager_all_close"
+) {
+  raidAllListSessions.delete(
+    interaction.user.id
+  );
+
+
+  return interaction.update({
+    content:
+      "✅ 已關閉全部突襲名單。",
+
+    embeds: [],
+
+    components: []
+  });
+}
         // =====================
 // 開始排團按鈕
 // =====================
