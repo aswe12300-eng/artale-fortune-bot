@@ -942,19 +942,28 @@ function buildTimeDetailEmbed(
           row[9] || "無";
 
 
-        embed.addFields({
-          name:
-            `${index + 1}. 🎮 ${characterName}`,
+        let detailText =
+  `👤 ${discordName}\n` +
+  `🕒 其他：${otherText}`;
 
-          value:
-            `👤 Discord：**${discordName}**\n` +
-            `🧙 ${job}｜Lv.${level}｜表功 ${power}\n` +
-            `🕒 其他可配合：${otherText}\n` +
-            `📝 備註：${note}`,
+if (
+  note &&
+  note !== "無"
+) {
+  detailText +=
+    `\n📝 ${note}`;
+}
 
-          inline:
-            false
-        });
+embed.addFields({
+  name:
+    `${index + 1}. ${characterName}｜${job}｜Lv.${level}｜表功 ${power}`,
+
+  value:
+    detailText,
+
+  inline:
+    false
+});
       }
     );
 
