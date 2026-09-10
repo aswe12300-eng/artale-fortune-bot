@@ -554,44 +554,48 @@ async function getCurrentWeekRows() {
 // ==============================
 
 async function findCurrentWeekSignup(
-  userId
+  userId,
+  characterName = null
 ) {
 
   const week =
     getWeekRange();
 
-
   const rows =
     await getCurrentWeekRows();
 
-
   const index =
-    rows.findIndex(
+    rows.findIndex(row => {
 
-      row =>
+      const sameWeek =
+        row[0] === week;
 
-        row[0] === week &&
+      const sameUser =
+        row[1] === userId;
 
-        row[1] === userId &&
+      const active =
+        row[11] !== "已取消";
 
-        row[11] !== "已取消"
+      const sameCharacter =
+        !characterName ||
+        row[3] === characterName;
 
-    );
+      return (
+        sameWeek &&
+        sameUser &&
+        active &&
+        sameCharacter
+      );
 
+    });
 
   if (index === -1) {
     return null;
   }
 
-
   return {
-
-    rowNumber:
-      index + 2,
-
-    row:
-      rows[index]
-
+    rowNumber: index + 2,
+    row: rows[index]
   };
 }
 
@@ -647,9 +651,10 @@ async function saveSignup(
 
 
   const existing =
-    await findCurrentWeekSignup(
-      userId
-    );
+  await findCurrentWeekSignup(
+    userId,
+    data.characterName
+  );
 
 
   // 已報名 → 更新原本那一列
