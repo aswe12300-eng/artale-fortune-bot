@@ -25,6 +25,7 @@ const IGNORED_XP_CHANNELS = [
 ];
 
 let levelData = {};
+let levelsLoaded = false;
 
 const xpCooldown = new Map();
 const voiceSessions = new Map();
@@ -386,50 +387,177 @@ async function repairLevelsFromBackup() {
 }
 
 async function saveLevelsToSheet() {
-  const values = [];
+  // Google Sheets 尚未成功載入時，禁止寫入
+  if (!levelsLoaded) {
+    console.warn(
+      "⚠️ 活躍資料尚未載入完成，取消本次 Google Sheets 儲存"
+    );
 
-  Object.entries(levelData).forEach(([guildId, users]) => {
-    Object.entries(users).forEach(([userId, data]) => {
-     values.push([
-  guildId,
-  userId,
-  data.name || "未知成員",
-  data.xp || 0,
-  getLevel(data.xp || 0),
-  data.messages || 0,
- (data.achievements || []).join(","),
-data.voiceMinutes || 0,
-data.voiceStart || "",
-new Date().toLocaleString("zh-TW", {
-  timeZone: "Asia/Taipei"
-}),
-data.voiceXpToday || 0,
-data.voiceXpDate || "",
-data.dailyXp || 0,
-data.dailyXpDate || "",
-data.kingCount || 0, 
-data.nightMessages || 0,
-data.morningMessages || 0,
-data.luckyCount || 0,
-data.badLuckCount || 0,
-data.voiceXpMinutes || 0
-]);
+    return;
+  }
+
+  // 先讀取目前試算表
+  const currentRes =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "工作表1!A2:T"
     });
-  });
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:T"
-  });
+  const currentRows =
+    currentRes.data.values || [];
 
+  // 以 guildId + userId 建立目前資料索引
+  const rowMap =
+    new Map();
+
+  currentRows.forEach(
+    (row, index) => {
+      const guildId =
+        row[0];
+
+      const userId =
+        row[1];
+
+      if (
+        guildId &&
+        userId
+      ) {
+        rowMap.set(
+          `${guildId}_${userId}`,
+          index
+        );
+      }
+    }
+  );
+
+  // 先複製目前 Sheet
+  // 原本存在但記憶體沒有的人，也會保留下來
+  const mergedRows =
+    currentRows.map(
+      row => [...row]
+    );
+
+  Object.entries(
+    levelData
+  ).forEach(
+    ([guildId, users]) => {
+      Object.entries(
+        users
+      ).forEach(
+        ([userId, data]) => {
+          const row = [
+            guildId,
+            userId,
+            data.name ||
+              "未知成員",
+
+            data.xp || 0,
+
+            getLevel(
+              data.xp || 0
+            ),
+
+            data.messages || 0,
+
+            (
+              data.achievements ||
+              []
+            ).join(","),
+
+            data.voiceMinutes ||
+              0,
+
+            data.voiceStart ||
+              "",
+
+            new Date()
+              .toLocaleString(
+                "zh-TW",
+                {
+                  timeZone:
+                    "Asia/Taipei"
+                }
+              ),
+
+            data.voiceXpToday ||
+              0,
+
+            data.voiceXpDate ||
+              "",
+
+            data.dailyXp ||
+              0,
+
+            data.dailyXpDate ||
+              "",
+
+            data.kingCount ||
+              0,
+
+            data.nightMessages ||
+              0,
+
+            data.morningMessages ||
+              0,
+
+            data.luckyCount ||
+              0,
+
+            data.badLuckCount ||
+              0,
+
+            data.voiceXpMinutes ||
+              0
+          ];
+
+          const key =
+            `${guildId}_${userId}`;
+
+          if (
+            rowMap.has(key)
+          ) {
+            const index =
+              rowMap.get(key);
+
+            // 只更新這個人的資料
+            mergedRows[index] =
+              row;
+          } else {
+            // 新成員才新增一列
+            rowMap.set(
+              key,
+              mergedRows.length
+            );
+
+            mergedRows.push(
+              row
+            );
+          }
+        }
+      );
+    }
+  );
+
+  // 注意：這裡完全沒有 clear()
   await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: "工作表1!A2:T",
-    valueInputOption: "RAW",
+    spreadsheetId:
+      SHEET_ID,
+
+    range:
+      "工作表1!A2:T",
+
+    valueInputOption:
+      "RAW",
+
     requestBody: {
-      values
+      values:
+        mergedRows
     }
   });
+
+  console.log(
+    `✅ 活躍資料安全儲存完成，共 ${mergedRows.length} 筆`
+  );
 }
 http.createServer((req, res) => {
   res.writeHead(200);
@@ -731,8 +859,19 @@ client.once("ready", async () => {
 
   try {
     await loadLevelsFromSheet();
+
+    levelsLoaded = true;
+
+    console.log(
+      "✅ 活躍資料載入完成，已開放 XP 儲存"
+    );
   } catch (err) {
-    console.error("Google Sheets 載入失敗：", err);
+    levelsLoaded = false;
+
+    console.error(
+      "❌ Google Sheets 載入失敗，為保護資料，本次禁止寫入活躍資料：",
+      err
+    );
   }
 });
 
@@ -916,51 +1055,7 @@ console.log("收到訊息：", message.content);
 
   if (message.author.bot) return;
   if (!message.guild) return;
-  if (
-  message.content.trim() ===
-  "-修復活躍資料"
-) {
-  if (
-    !message.member.permissions.has(
-      "ManageGuild"
-    )
-  ) {
-    return message.reply(
-      "❌ 只有管理員可以使用這個指令。"
-    );
-  }
-
-  try {
-    await message.reply(
-      "🛠️ 正在修復活躍資料，請稍候..."
-    );
-
-    const count =
-      await repairLevelsFromBackup();
-
-    // 修復完成後重新載入記憶體
-    levelData = {};
-
-    await loadLevelsFromSheet();
-
-    saveLevelData();
-
-    await message.channel.send(
-      `✅ 活躍資料修復完成！\n共修復／保留 **${count} 位成員**。`
-    );
-  } catch (err) {
-    console.error(
-      "活躍資料修復失敗：",
-      err
-    );
-
-    await message.channel.send(
-      "❌ 修復失敗，請查看 Bot Logs。"
-    );
-  }
-
-  return;
-}
+  
   
 
   const guildId = message.guild.id;
