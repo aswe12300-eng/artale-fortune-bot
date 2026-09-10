@@ -1535,6 +1535,19 @@ function setupRaidSignup(client) {
         ) {
 
           // =====================
+          // 不是報名系統的選單就忽略
+          // 避免和 raidManager 衝突
+          // =====================
+
+          if (
+            !interaction.customId.startsWith(
+              "raid_signup_"
+            )
+          ) {
+            return;
+          }
+
+          // =====================
           // 修改：選角色
           // =====================
 
