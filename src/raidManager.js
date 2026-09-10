@@ -44,20 +44,43 @@ function getTaipeiDate() {
 
 function formatDate(date) {
   const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const m =
+    String(date.getMonth() + 1)
+      .padStart(2, "0");
+
+  const d =
+    String(date.getDate())
+      .padStart(2, "0");
 
   return `${y}/${m}/${d}`;
 }
 
+function parseYmd(text) {
+  const [y, m, d] =
+    text.split("/").map(Number);
+
+  return new Date(
+    y,
+    m - 1,
+    d,
+    0,
+    0,
+    0,
+    0
+  );
+}
+
 
 // ==============================
-// 本週週次：星期二～下週一
+// 本週：星期二～下星期一
 // ==============================
 
 function getCurrentRaidWeekRange() {
-  const now = getTaipeiDate();
-  const day = now.getDay();
+  const now =
+    getTaipeiDate();
+
+  const day =
+    now.getDay();
 
   let diffToTuesday;
 
@@ -66,84 +89,141 @@ function getCurrentRaidWeekRange() {
   } else if (day === 1) {
     diffToTuesday = -6;
   } else {
-    diffToTuesday = 2 - day;
+    diffToTuesday =
+      2 - day;
   }
 
-  const tuesday = new Date(now);
-  tuesday.setHours(0, 0, 0, 0);
-  tuesday.setDate(
-    now.getDate() + diffToTuesday
+  const tuesday =
+    new Date(now);
+
+  tuesday.setHours(
+    0,
+    0,
+    0,
+    0
   );
 
-  const monday = new Date(tuesday);
+  tuesday.setDate(
+    now.getDate() +
+    diffToTuesday
+  );
+
+  const monday =
+    new Date(tuesday);
+
   monday.setDate(
     tuesday.getDate() + 6
   );
 
-  return `${formatDate(tuesday)}～${formatDate(monday)}`;
+  return (
+    `${formatDate(tuesday)}～${formatDate(monday)}`
+  );
 }
 
 
 // ==============================
-// 讀取試算表
+// 下週
+// ==============================
+
+function getNextRaidWeekRange() {
+  const current =
+    getCurrentRaidWeekRange();
+
+  const [startText] =
+    current.split("～");
+
+  const tuesday =
+    parseYmd(startText);
+
+  tuesday.setDate(
+    tuesday.getDate() + 7
+  );
+
+  const monday =
+    new Date(tuesday);
+
+  monday.setDate(
+    tuesday.getDate() + 6
+  );
+
+  return (
+    `${formatDate(tuesday)}～${formatDate(monday)}`
+  );
+}
+
+
+// ==============================
+// 試算表
 // ==============================
 
 async function getRaidRows() {
   const res =
     await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId:
+        SHEET_ID,
+
       range:
         `${RAID_SHEET_NAME}!A2:L`
     });
 
-  return res.data.values || [];
+  return (
+    res.data.values || []
+  );
 }
 
 
 // ==============================
-// 取得目前週次有效報名
+// 指定週次有效報名
 // ==============================
 
-async function getCurrentWeekSignups() {
-  const week =
-    getCurrentRaidWeekRange();
-
+async function getWeekSignups(
+  weekRange
+) {
   const rows =
     await getRaidRows();
 
   return rows.filter(
     row =>
-      row[0] === week &&
+      row[0] === weekRange &&
       row[11] !== "已取消"
   );
 }
 
 
 // ==============================
-// 取得某隻王的報名者
+// 指定週次＋指定王
 // ==============================
 
 async function getBossSignups(
+  weekRange,
   bossName
 ) {
   const rows =
-    await getCurrentWeekSignups();
-
-  return rows.filter(row => {
-    const bosses =
-      String(row[7] || "")
-        .split("、")
-        .map(v => v.trim());
-
-    return bosses.includes(
-      bossName
+    await getWeekSignups(
+      weekRange
     );
-  });
+
+  return rows.filter(
+    row => {
+      const bosses =
+        String(
+          row[7] || ""
+        )
+          .split("、")
+          .map(
+            v => v.trim()
+          );
+
+      return bosses.includes(
+        bossName
+      );
+    }
+  );
 }
 
 
 // ==============================
-// 解析可打時段
+// 解析時段
 // ==============================
 
 function parseTimes(text) {
@@ -156,14 +236,18 @@ function parseTimes(text) {
   const lines =
     String(text)
       .split("\n")
-      .map(v => v.trim())
+      .map(
+        v => v.trim()
+      )
       .filter(Boolean);
 
   for (const line of lines) {
     const parts =
       line.split("：");
 
-    if (parts.length < 2) {
+    if (
+      parts.length < 2
+    ) {
       continue;
     }
 
@@ -173,7 +257,9 @@ function parseTimes(text) {
     const times =
       parts[1]
         .split("、")
-        .map(v => v.trim())
+        .map(
+          v => v.trim()
+        )
         .filter(Boolean);
 
     for (const time of times) {
@@ -229,7 +315,9 @@ function sortTimeKeys(keys) {
         DAY_ORDER.indexOf(dayA) -
         DAY_ORDER.indexOf(dayB);
 
-      if (dayDiff !== 0) {
+      if (
+        dayDiff !== 0
+      ) {
         return dayDiff;
       }
 
@@ -243,7 +331,7 @@ function sortTimeKeys(keys) {
 
 
 // ==============================
-// 統計各時段人數
+// 統計時段
 // ==============================
 
 function buildTimeStats(rows) {
@@ -255,12 +343,17 @@ function buildTimeStats(rows) {
         row[8]
       );
 
-    for (const item of times) {
-      if (!stats[item.key]) {
+    for (
+      const item of times
+    ) {
+      if (
+        !stats[item.key]
+      ) {
         stats[item.key] = [];
       }
 
-      stats[item.key].push(row);
+      stats[item.key]
+        .push(row);
     }
   }
 
@@ -269,37 +362,91 @@ function buildTimeStats(rows) {
 
 
 // ==============================
-// 王選單
+// 週次選單
 // ==============================
 
-function buildBossSelect() {
+function buildWeekSelect() {
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const nextWeek =
+    getNextRaidWeekRange();
+
+  const menu =
+    new StringSelectMenuBuilder()
+      .setCustomId(
+        "raid_manager_week"
+      )
+      .setPlaceholder(
+        "📅 選擇要查看的週次"
+      )
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(
+        {
+          label:
+            `本週｜${currentWeek}`,
+          value:
+            currentWeek,
+          emoji:
+            "📅"
+        },
+        {
+          label:
+            `下週｜${nextWeek}`,
+          value:
+            nextWeek,
+          emoji:
+            "⏭️"
+        }
+      );
+
+  return new ActionRowBuilder()
+    .addComponents(menu);
+}
+
+
+// ==============================
+// 王選單
+// 將週次放進 value
+// ==============================
+
+function buildBossSelect(
+  weekRange
+) {
   const menu =
     new StringSelectMenuBuilder()
       .setCustomId(
         "raid_manager_boss"
       )
       .setPlaceholder(
-        "選擇要查看的突襲王"
+        "👹 選擇要查看的突襲王"
       )
+      .setMinValues(1)
+      .setMaxValues(1)
       .addOptions(
         {
           label: "普拉",
-          value: "普拉",
+          value:
+            `${weekRange}|普拉`,
           emoji: "👹"
         },
         {
           label: "炎魔",
-          value: "炎魔",
+          value:
+            `${weekRange}|炎魔`,
           emoji: "🔥"
         },
         {
           label: "困拉",
-          value: "困拉",
+          value:
+            `${weekRange}|困拉`,
           emoji: "⚔️"
         },
         {
           label: "龍王",
-          value: "龍王",
+          value:
+            `${weekRange}|龍王`,
           emoji: "🐲"
         }
       );
@@ -314,6 +461,7 @@ function buildBossSelect() {
 // ==============================
 
 function buildTimeSelect(
+  weekRange,
   bossName,
   stats
 ) {
@@ -325,24 +473,29 @@ function buildTimeSelect(
   const options =
     keys
       .slice(0, 25)
-      .map(key => {
-        const [
-          day,
-          time
-        ] = key.split("|");
+      .map(
+        key => {
+          const [
+            day,
+            time
+          ] = key.split("|");
 
-        const count =
-          stats[key]?.length || 0;
+          const count =
+            stats[key]
+              ?.length || 0;
 
-        return {
-          label:
-            `${day} ${time}｜${count} 人`,
-          value:
-            `${bossName}|${key}`,
-          description:
-            `查看這個時段可參加的 ${count} 位角色`
-        };
-      });
+          return {
+            label:
+              `${day} ${time}｜${count} 人`,
+
+            value:
+              `${weekRange}|${bossName}|${day}|${time}`,
+
+            description:
+              `查看這個時段的 ${count} 位報名角色`
+          };
+        }
+      );
 
   const menu =
     new StringSelectMenuBuilder()
@@ -350,7 +503,7 @@ function buildTimeSelect(
         "raid_manager_time"
       )
       .setPlaceholder(
-        "選擇時段查看名單"
+        "🕒 選擇時段查看名單"
       )
       .setMinValues(1)
       .setMaxValues(1)
@@ -362,20 +515,30 @@ function buildTimeSelect(
 
 
 // ==============================
-// 管理主面板
+// 首頁
 // ==============================
 
 function buildManagerEmbed() {
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const nextWeek =
+    getNextRaidWeekRange();
+
   return new EmbedBuilder()
     .setColor("#F1C40F")
     .setTitle(
       "⚔️ EtheReal｜突襲排團管理"
     )
     .setDescription(
-      `📅 **目前週次：${getCurrentRaidWeekRange()}**\n\n` +
-      "請先選擇要查看的突襲王。\n\n" +
-      "系統會自動統計各時段可參加人數，" +
-      "再選時段即可查看角色名單。"
+      "請先選擇要查看的週次。\n\n" +
+
+      `📅 **本週**\n${currentWeek}\n\n` +
+
+      `⏭️ **下週**\n${nextWeek}\n\n` +
+
+      "選擇週次後，再選擇突襲王與時段。\n" +
+      "只要下週已經有人報名，就可以立即查看下週名單。"
     )
     .setFooter({
       text:
@@ -385,10 +548,38 @@ function buildManagerEmbed() {
 
 
 // ==============================
-// 某隻王統計畫面
+// 選完週次
+// ==============================
+
+function buildWeekEmbed(
+  weekRange
+) {
+  const current =
+    getCurrentRaidWeekRange();
+
+  const type =
+    weekRange === current
+      ? "本週"
+      : "下週";
+
+  return new EmbedBuilder()
+    .setColor("#F1C40F")
+    .setTitle(
+      `⚔️ EtheReal｜${type}突襲名單`
+    )
+    .setDescription(
+      `📅 **${weekRange}**\n\n` +
+      "請選擇要查看的突襲王。"
+    );
+}
+
+
+// ==============================
+// 王統計
 // ==============================
 
 function buildBossStatsEmbed(
+  weekRange,
   bossName,
   rows,
   stats
@@ -408,7 +599,9 @@ function buildBossStatsEmbed(
   let rankingText =
     "目前沒有可用時段資料。";
 
-  if (ranked.length > 0) {
+  if (
+    ranked.length > 0
+  ) {
     rankingText =
       ranked
         .map(
@@ -442,19 +635,31 @@ function buildBossStatsEmbed(
       `👹 ${bossName}｜報名統計`
     )
     .setDescription(
-      `📅 **${getCurrentRaidWeekRange()}**\n\n` +
+      `📅 **${weekRange}**\n\n` +
+
       `👥 報名角色：**${rows.length} 人**\n\n` +
+
       `🔥 **人數最多時段**\n${rankingText}\n\n` +
-      "請使用下方選單查看指定時段名單。"
+
+      "請使用下方選單查看指定時段的詳細名單。"
     );
 }
 
 
 // ==============================
-// 某時段詳細名單
+// 詳細名單
+//
+// 試算表：
+// B = Discord ID → row[1]
+// C = Discord 名稱 → row[2]
+// D = 角色名稱 → row[3]
+// E = 職業 → row[4]
+// F = 等級 → row[5]
+// G = 常駐表功 → row[6]
 // ==============================
 
 function buildTimeDetailEmbed(
+  weekRange,
   bossName,
   day,
   time,
@@ -467,9 +672,11 @@ function buildTimeDetailEmbed(
         `⚔️ ${bossName}｜${day} ${time}`
       )
       .setDescription(
-        `📅 **${getCurrentRaidWeekRange()}**\n` +
-        `👥 共 **${rows.length}** 隻角色可以參加`
+        `📅 **${weekRange}**\n` +
+        `👥 共 **${rows.length}** 隻角色可以參加\n\n` +
+        "下方會顯示「Discord 報名者」以及實際角色資料。"
       );
+
 
   rows
     .slice(0, 25)
@@ -492,7 +699,10 @@ function buildTimeDetailEmbed(
             )
             .map(
               item =>
-                `${item.day.replace("星期", "週")}${item.time}`
+                `${item.day.replace(
+                  "星期",
+                  "週"
+                )}${item.time}`
             );
 
         const otherText =
@@ -500,18 +710,44 @@ function buildTimeDetailEmbed(
             ? otherTimes.join("、")
             : "無其他時段";
 
+
+        const discordName =
+          row[2] ||
+          "未知成員";
+
+        const characterName =
+          row[3] ||
+          "未命名角色";
+
+        const job =
+          row[4] || "-";
+
+        const level =
+          row[5] || "-";
+
+        const power =
+          row[6] || "-";
+
+        const note =
+          row[9] || "無";
+
+
         embed.addFields({
           name:
-            `${index + 1}. ${row[3] || "未命名角色"}`,
+            `${index + 1}. 🎮 ${characterName}`,
+
           value:
-            `🧙 ${row[4] || "-"}｜Lv.${row[5] || "-"}｜表功 ${row[6] || "-"}\n` +
+            `👤 Discord：**${discordName}**\n` +
+            `🧙 ${job}｜Lv.${level}｜表功 ${power}\n` +
             `🕒 其他可配合：${otherText}\n` +
-            `📝 備註：${row[9] || "無"}`,
+            `📝 備註：${note}`,
+
           inline:
             false
         });
       }
     );
+
 
   if (
     rows.length > 25
@@ -527,24 +763,44 @@ function buildTimeDetailEmbed(
 
 
 // ==============================
-// 啟動管理系統
+// 權限
+// ==============================
+
+function hasManagerPermission(
+  interactionOrMessage
+) {
+  return (
+    interactionOrMessage.member
+      ?.permissions
+      ?.has("ManageGuild") ||
+    false
+  );
+}
+
+
+// ==============================
+// 啟動
 // ==============================
 
 function setupRaidManager(client) {
 
   // ============================
-  // 管理員文字指令
+  // -突襲名單
   // ============================
 
   client.on(
     "messageCreate",
     async message => {
 
-      if (message.author.bot) {
+      if (
+        message.author.bot
+      ) {
         return;
       }
 
-      if (!message.guild) {
+      if (
+        !message.guild
+      ) {
         return;
       }
 
@@ -556,8 +812,8 @@ function setupRaidManager(client) {
       }
 
       if (
-        !message.member.permissions.has(
-          "ManageGuild"
+        !hasManagerPermission(
+          message
         )
       ) {
         return message.reply(
@@ -565,12 +821,14 @@ function setupRaidManager(client) {
         );
       }
 
+
       return message.reply({
         embeds: [
           buildManagerEmbed()
         ],
+
         components: [
-          buildBossSelect()
+          buildWeekSelect()
         ]
       });
     }
@@ -594,35 +852,93 @@ function setupRaidManager(client) {
         }
 
 
+        // 只處理 raid_manager_
+        // 避免和報名系統互相衝突
+        if (
+          !interaction.customId
+            .startsWith(
+              "raid_manager_"
+            )
+        ) {
+          return;
+        }
+
+
+        if (
+          !hasManagerPermission(
+            interaction
+          )
+        ) {
+          return interaction.reply({
+            content:
+              "❌ 只有管理員可以使用這個功能。",
+            ephemeral:
+              true
+          });
+        }
+
+
         // =====================
-        // 選擇王
+        // 選週次
+        // =====================
+
+        if (
+          interaction.customId ===
+          "raid_manager_week"
+        ) {
+          const weekRange =
+            interaction.values[0];
+
+
+          return interaction.update({
+            embeds: [
+              buildWeekEmbed(
+                weekRange
+              )
+            ],
+
+            components: [
+              buildWeekSelect(),
+              buildBossSelect(
+                weekRange
+              )
+            ]
+          });
+        }
+
+
+        // =====================
+        // 選王
         // =====================
 
         if (
           interaction.customId ===
           "raid_manager_boss"
         ) {
+          const value =
+            interaction.values[0];
 
-          if (
-            !interaction.member.permissions.has(
-              "ManageGuild"
-            )
-          ) {
-            return interaction.reply({
-              content:
-                "❌ 只有管理員可以使用這個功能。",
-              ephemeral:
-                true
-            });
-          }
+          const splitIndex =
+            value.lastIndexOf("|");
+
+          const weekRange =
+            value.slice(
+              0,
+              splitIndex
+            );
 
           const bossName =
-            interaction.values[0];
+            value.slice(
+              splitIndex + 1
+            );
+
 
           const rows =
             await getBossSignups(
+              weekRange,
               bossName
             );
+
 
           if (
             rows.length === 0
@@ -630,53 +946,77 @@ function setupRaidManager(client) {
             return interaction.update({
               embeds: [
                 new EmbedBuilder()
-                  .setColor("#95A5A6")
+                  .setColor(
+                    "#95A5A6"
+                  )
                   .setTitle(
                     `👹 ${bossName}｜報名統計`
                   )
                   .setDescription(
-                    "目前這隻王還沒有人報名。"
+                    `📅 **${weekRange}**\n\n` +
+                    "目前這一期這隻王還沒有人報名。"
                   )
               ],
+
               components: [
-                buildBossSelect()
+                buildWeekSelect(),
+                buildBossSelect(
+                  weekRange
+                )
               ]
             });
           }
+
 
           const stats =
             buildTimeStats(
               rows
             );
 
+
           if (
-            Object.keys(stats).length === 0
+            Object.keys(stats)
+              .length === 0
           ) {
             return interaction.update({
               embeds: [
                 buildBossStatsEmbed(
+                  weekRange,
                   bossName,
                   rows,
                   stats
                 )
               ],
+
               components: [
-                buildBossSelect()
+                buildWeekSelect(),
+                buildBossSelect(
+                  weekRange
+                )
               ]
             });
           }
 
+
           return interaction.update({
             embeds: [
               buildBossStatsEmbed(
+                weekRange,
                 bossName,
                 rows,
                 stats
               )
             ],
+
             components: [
-              buildBossSelect(),
+              buildWeekSelect(),
+
+              buildBossSelect(
+                weekRange
+              ),
+
               buildTimeSelect(
+                weekRange,
                 bossName,
                 stats
               )
@@ -686,61 +1026,63 @@ function setupRaidManager(client) {
 
 
         // =====================
-        // 選擇時段
+        // 選時段
         // =====================
 
         if (
           interaction.customId ===
           "raid_manager_time"
         ) {
-
-          if (
-            !interaction.member.permissions.has(
-              "ManageGuild"
-            )
-          ) {
-            return interaction.reply({
-              content:
-                "❌ 只有管理員可以使用這個功能。",
-              ephemeral:
-                true
-            });
-          }
-
           const value =
             interaction.values[0];
+
+          /*
+            value 格式：
+
+            2026/09/15～2026/09/21
+            |龍王
+            |星期五
+            |22:00
+          */
 
           const parts =
             value.split("|");
 
-          const bossName =
+          const weekRange =
             parts[0];
 
-          const day =
+          const bossName =
             parts[1];
 
-          const time =
+          const day =
             parts[2];
+
+          const time =
+            parts[3];
+
 
           const rows =
             await getBossSignups(
+              weekRange,
               bossName
             );
 
+
           const available =
-            rows.filter(row => {
+            rows.filter(
+              row => {
+                const times =
+                  parseTimes(
+                    row[8]
+                  );
 
-              const times =
-                parseTimes(
-                  row[8]
+                return times.some(
+                  item =>
+                    item.day === day &&
+                    item.time === time
                 );
-
-              return times.some(
-                item =>
-                  item.day === day &&
-                  item.time === time
-              );
-            });
+              }
+            );
 
 
           const stats =
@@ -750,36 +1092,30 @@ function setupRaidManager(client) {
 
 
           return interaction.update({
-
             embeds: [
-
               buildTimeDetailEmbed(
-
+                weekRange,
                 bossName,
-
                 day,
-
                 time,
-
                 available
-
               )
-
             ],
 
             components: [
+              buildWeekSelect(),
 
-              buildBossSelect(),
+              buildBossSelect(
+                weekRange
+              ),
 
               buildTimeSelect(
+                weekRange,
                 bossName,
                 stats
               )
-
             ]
-
           });
-
         }
 
 
@@ -795,33 +1131,25 @@ function setupRaidManager(client) {
           interaction.deferred ||
           interaction.replied
         ) {
-
           await interaction.followUp({
-
             content:
               "❌ 讀取突襲名單時發生錯誤。",
-
             ephemeral:
               true
-
-          }).catch(() => {});
-
+          }).catch(
+            () => {}
+          );
         } else {
-
           await interaction.reply({
-
             content:
               "❌ 讀取突襲名單時發生錯誤。",
-
             ephemeral:
               true
-
-          }).catch(() => {});
-
+          }).catch(
+            () => {}
+          );
         }
-
       }
-
     }
   );
 }
