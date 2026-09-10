@@ -26,6 +26,10 @@ const {
   setupRaidTeamBuilder
 } = require("./src/raidTeamBuilder");
 
+const {
+  setupRpsGame
+} = require("./src/rpsGame");
+
 if (!client || typeof client.on !== "function") {
   console.error("❌ Discord client 載入失敗");
   console.error(
@@ -41,6 +45,7 @@ setupBossTracker(client);
 setupRaidSignup(client);
 setupRaidManager(client);
 setupRaidTeamBuilder(client);
+setupRpsGame(client);
 
 client.login(process.env.DISCORD_TOKEN).catch(error => {
   console.error("Discord 登入失敗：", error);
