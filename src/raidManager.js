@@ -1192,7 +1192,7 @@ if (
           });
         }
 
-        // ==============================
+   // ==============================
 // 週次＋突襲王
 // ==============================
 
@@ -1200,19 +1200,73 @@ if (
   interaction.customId ===
   "raid_manager_week_boss"
 ) {
-  // 👈 你剛剛貼給我的整段程式
-}
+  const value =
+    interaction.values[0];
 
+  const splitIndex =
+    value.lastIndexOf("|");
 
-// =====================
-// 選週次
-// =====================
+  const weekRange =
+    value.slice(
+      0,
+      splitIndex
+    );
 
-if (
-  interaction.customId ===
-  "raid_manager_week"
-) {
-  // 原本程式...
+  const bossName =
+    value.slice(
+      splitIndex + 1
+    );
+
+  const rows =
+    await getBossSignups(
+      weekRange,
+      bossName
+    );
+
+  const stats =
+    buildTimeStats(
+      rows
+    );
+
+  if (
+    Object.keys(stats).length === 0
+  ) {
+    return interaction.update({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#95A5A6")
+          .setTitle(
+            `👹 ${bossName}`
+          )
+          .setDescription(
+            `📅 ${weekRange}\n\n目前沒有可選擇的時段。`
+          )
+      ],
+
+      components: []
+    });
+  }
+
+  return interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#3498DB")
+        .setTitle(
+          `👹 ${bossName}｜選擇時段`
+        )
+        .setDescription(
+          `📅 ${weekRange}\n\n請選擇要查看的時段。`
+        )
+    ],
+
+    components: [
+      buildTimeSelect(
+        weekRange,
+        bossName,
+        stats
+      )
+    ]
+  });
 }
 
 
