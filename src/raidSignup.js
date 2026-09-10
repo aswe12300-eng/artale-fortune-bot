@@ -1132,14 +1132,24 @@ function setupRaidSignup(client) {
         // 按鈕
         // ========================
 
-        if (
-          interaction.isButton()
-        ) {
+       if (
+  interaction.isButton()
+) {
 
-          const weekRange =
-            getWeekFromInteraction(
-              interaction
-            );
+  // 只處理突襲報名系統自己的按鈕
+  // 避免和 raidManager 的按鈕衝突
+  if (
+    !interaction.customId.startsWith(
+      "raid_signup_"
+    )
+  ) {
+    return;
+  }
+
+  const weekRange =
+    getWeekFromInteraction(
+      interaction
+    );
 
 
           if (!weekRange) {
