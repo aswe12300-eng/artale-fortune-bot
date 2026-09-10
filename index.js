@@ -14,6 +14,10 @@ const {
   setupBossTracker
 } = require("./src/bossTracker");
 
+const {
+  setupRaidSignup
+} = require("./src/raidSignup");
+
 if (!client || typeof client.on !== "function") {
   console.error("❌ Discord client 載入失敗");
   console.error(
@@ -26,6 +30,7 @@ if (!client || typeof client.on !== "function") {
 setupRegistration(client);
 setupSupportRole(client);
 setupBossTracker(client);
+setupRaidSignup(client);
 
 client.login(process.env.DISCORD_TOKEN).catch(error => {
   console.error("Discord 登入失敗：", error);
