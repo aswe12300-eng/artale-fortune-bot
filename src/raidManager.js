@@ -1685,23 +1685,21 @@ if (
     });
   }
 
-  return interaction.reply({
-    embeds: [
-      buildTeamEmbed(
-        session
-      )
-    ],
+ return interaction.reply({
+  embeds: [
+    buildTeamEmbed(
+      session
+    )
+  ],
 
-    components:
-  buildTeamButtons(
-    session
-  ),
-    ],
+  components:
+    buildTeamButtons(
+      session
+    ),
 
-    ephemeral:
-      true
-  });
-}
+  ephemeral:
+    true
+});
 
         if (
           !interaction.isStringSelectMenu()
