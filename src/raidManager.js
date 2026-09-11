@@ -1692,10 +1692,10 @@ if (
       )
     ],
 
-    components: [
-      buildTeamButtons(
-        session
-      )
+    components:
+  buildTeamButtons(
+    session
+  ),
     ],
 
     ephemeral:
