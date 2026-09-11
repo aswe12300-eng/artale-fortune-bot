@@ -3,7 +3,10 @@ const {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 const { google } = require("googleapis");
@@ -378,6 +381,57 @@ function buildPlayerSelect(
 
 
 // ==============================
+// 建立新團｜輸入自訂團名
+// ==============================
+
+function buildCreateTeamModal() {
+  const modal =
+    new ModalBuilder()
+      .setCustomId(
+        "raid_team_create_modal"
+      )
+      .setTitle(
+        "建立新的突襲團"
+      );
+
+  const teamNameInput =
+    new TextInputBuilder()
+      .setCustomId(
+        "raid_team_name"
+      )
+      .setLabel(
+        "團名"
+      )
+      .setPlaceholder(
+        "例如：晴晴出貨團"
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setRequired(
+        true
+      )
+      .setMinLength(
+        1
+      )
+      .setMaxLength(
+        30
+      );
+
+  const row =
+    new ActionRowBuilder()
+      .addComponents(
+        teamNameInput
+      );
+
+  modal.addComponents(
+    row
+  );
+
+  return modal;
+}
+
+// ==============================
 // 建立控制按鈕
 // ==============================
 
@@ -386,10 +440,26 @@ function buildTeamButtons(
 ) {
   const buttons = [];
 
+  buttons.push(
+  new ButtonBuilder()
+    .setCustomId(
+      "raid_team_create"
+    )
+    .setLabel(
+      "建立新團"
+    )
+    .setEmoji(
+      "➕"
+    )
+    .setStyle(
+      ButtonStyle.Success
+    )
+);
+
   const teamNames =
-    getTeamNames(
-      session.bossName
-    );
+  Object.keys(
+    session.teams
+  );
 
   for (
     const teamName
@@ -464,9 +534,9 @@ function buildTeamEmbed(
       );
 
   const teamNames =
-    getTeamNames(
-      session.bossName
-    );
+  Object.keys(
+    session.teams
+  );
 
   for (
     const teamName
@@ -529,10 +599,10 @@ function buildAnnouncementEmbed(
         `🕒 ${session.day} ${session.time}`
       );
 
-  const teamNames =
-    getTeamNames(
-      session.bossName
-    );
+ const teamNames =
+  Object.keys(
+    session.teams
+  );
 
   for (
     const teamName
@@ -604,21 +674,7 @@ async function createTeamSession(
       rowToPlayer
     );
 
-  const teams = {};
-
-  const teamNames =
-    getTeamNames(
-      bossName
-    );
-
-  for (
-    const teamName
-    of teamNames
-  ) {
-    teams[
-      teamName
-    ] = [];
-  }
+ const teams = {};
 
   const session = {
     weekRange,
@@ -686,6 +742,19 @@ function setupRaidTeamBuilder(
                 true
             });
           }
+
+// ==============================
+// 建立新團
+// ==============================
+
+if (
+  interaction.customId ===
+  "raid_team_create"
+) {
+  return interaction.showModal(
+    buildCreateTeamModal()
+  );
+}
 
 
           // 編輯隊伍
@@ -757,10 +826,10 @@ function setupRaidTeamBuilder(
             "raid_team_publish"
           ) {
 
-            const teamNames =
-              getTeamNames(
-                session.bossName
-              );
+           const teamNames =
+             Object.keys(
+               session.teams
+             );
 
             const total =
               teamNames.reduce(
@@ -864,6 +933,90 @@ await channel.send({
           }
 
         }
+
+
+        // ==============================
+// 建立新團｜接收團名
+// ==============================
+
+if (
+  interaction.isModalSubmit() &&
+  interaction.customId ===
+    "raid_team_create_modal"
+) {
+  const session =
+    teamSessions.get(
+      interaction.user.id
+    );
+
+  if (
+    !session
+  ) {
+    return interaction.reply({
+      content:
+        "⚠️ 排團資料已失效，請重新從突襲名單開啟排團。",
+      ephemeral:
+        true
+    });
+  }
+
+  const teamName =
+    interaction.fields
+      .getTextInputValue(
+        "raid_team_name"
+      )
+      .trim();
+
+  if (
+    !teamName
+  ) {
+    return interaction.reply({
+      content:
+        "❌ 團名不能是空白。",
+      ephemeral:
+        true
+    });
+  }
+
+  if (
+    session.teams[
+      teamName
+    ]
+  ) {
+    return interaction.reply({
+      content:
+        `❌ 已經有一個「${teamName}」了，請換一個團名。`,
+      ephemeral:
+        true
+    });
+  }
+
+  session.teams[
+    teamName
+  ] = [];
+
+  teamSessions.set(
+    interaction.user.id,
+    session
+  );
+
+  return interaction.reply({
+    content:
+      `✅ 已建立新團：**${teamName}**`,
+    embeds: [
+      buildTeamEmbed(
+        session
+      )
+    ],
+    components: [
+      buildTeamButtons(
+        session
+      )
+    ],
+    ephemeral:
+      true
+  });
+}
 
 
         // ======================
