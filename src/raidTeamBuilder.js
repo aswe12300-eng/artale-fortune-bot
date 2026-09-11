@@ -18,7 +18,7 @@ const { google } = require("googleapis");
 const RAID_SHEET_NAME = "突襲報名";
 
 const RAID_ANNOUNCEMENT_CHANNEL_ID =
-  "1493595715992289452";
+  "1547521433654132797";
 
 const SHEET_ID =
   process.env.SHEET_ID;
