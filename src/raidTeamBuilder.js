@@ -202,29 +202,6 @@ function getTeamLimit(
 
 
 // ==============================
-// 龍王有 A/B 兩隊
-// 其他王目前先 A 團
-// ==============================
-
-function getTeamNames(
-  bossName
-) {
-  if (
-    bossName === "龍王"
-  ) {
-    return [
-      "A隊",
-      "B隊"
-    ];
-  }
-
-  return [
-    "A團"
-  ];
-}
-
-
-// ==============================
 // 把試算表 row 轉成角色資料
 //
 // B Discord ID  row[1]
@@ -357,10 +334,20 @@ function buildPlayerSelect(
     return null;
   }
 
+  const teamNames =
+    Object.keys(
+      session.teams
+    );
+
+  const teamIndex =
+    teamNames.indexOf(
+      teamName
+    );
+
   const menu =
     new StringSelectMenuBuilder()
       .setCustomId(
-        `raid_team_players_${teamName}`
+        `raid_team_players_${teamIndex}`
       )
       .setPlaceholder(
         `選擇 ${teamName} 成員`
@@ -438,48 +425,47 @@ function buildCreateTeamModal() {
 function buildTeamButtons(
   session
 ) {
-  const buttons = [];
-
-  buttons.push(
-  new ButtonBuilder()
-    .setCustomId(
-      "raid_team_create"
-    )
-    .setLabel(
-      "建立新團"
-    )
-    .setEmoji(
-      "➕"
-    )
-    .setStyle(
-      ButtonStyle.Success
-    )
-);
+  const rows = [];
 
   const teamNames =
-  Object.keys(
-    session.teams
+    Object.keys(
+      session.teams
+    );
+
+  const allButtons = [
+    new ButtonBuilder()
+      .setCustomId(
+        "raid_team_create"
+      )
+      .setLabel(
+        "建立新團"
+      )
+      .setEmoji(
+        "➕"
+      )
+      .setStyle(
+        ButtonStyle.Success
+      )
+  ];
+
+  teamNames.forEach(
+    (teamName, index) => {
+      allButtons.push(
+        new ButtonBuilder()
+          .setCustomId(
+            `raid_team_edit_${index}`
+          )
+          .setLabel(
+            `編輯 ${teamName}`.slice(0, 80)
+          )
+          .setStyle(
+            ButtonStyle.Primary
+          )
+      );
+    }
   );
 
-  for (
-    const teamName
-    of teamNames
-  ) {
-    buttons.push(
-      new ButtonBuilder()
-        .setCustomId(
-          `raid_team_edit_${teamName}`
-        )
-        .setLabel(
-          `編輯 ${teamName}`
-        )
-        .setStyle(
-          ButtonStyle.Primary
-        )
-    );
-  }
-
-  buttons.push(
+  allButtons.push(
     new ButtonBuilder()
       .setCustomId(
         "raid_team_preview"
@@ -492,7 +478,7 @@ function buildTeamButtons(
       )
   );
 
-  buttons.push(
+  allButtons.push(
     new ButtonBuilder()
       .setCustomId(
         "raid_team_publish"
@@ -505,10 +491,23 @@ function buildTeamButtons(
       )
   );
 
-  return new ActionRowBuilder()
-    .addComponents(
-      buttons
+  for (
+    let i = 0;
+    i < allButtons.length;
+    i += 5
+  ) {
+    rows.push(
+      new ActionRowBuilder()
+        .addComponents(
+          allButtons.slice(
+            i,
+            i + 5
+          )
+        )
     );
+  }
+
+  return rows;
 }
 
 
@@ -764,12 +763,34 @@ if (
                 "raid_team_edit_"
               )
           ) {
-            const teamName =
-              interaction.customId
-                .replace(
+            const teamIndex =
+              Number(
+                interaction.customId.replace(
                   "raid_team_edit_",
                   ""
-                );
+                )
+              );
+
+            const teamNames =
+              Object.keys(
+                session.teams
+              );
+
+            const teamName =
+              teamNames[
+                teamIndex
+              ];
+
+            if (
+              !teamName
+            ) {
+              return interaction.reply({
+                content:
+                  "❌ 找不到這個團隊，請重新開啟排團畫面。",
+                ephemeral:
+                  true
+              });
+            }
 
             const select =
               buildPlayerSelect(
@@ -1008,11 +1029,10 @@ if (
         session
       )
     ],
-    components: [
+    components:
       buildTeamButtons(
         session
-      )
-    ],
+      ),
     ephemeral:
       true
   });
@@ -1055,12 +1075,34 @@ if (
           }
 
 
-          const teamName =
-            interaction.customId
-              .replace(
+          const teamIndex =
+            Number(
+              interaction.customId.replace(
                 "raid_team_players_",
                 ""
-              );
+              )
+            );
+
+          const teamNames =
+            Object.keys(
+              session.teams
+            );
+
+          const teamName =
+            teamNames[
+              teamIndex
+            ];
+
+          if (
+            !teamName
+          ) {
+            return interaction.reply({
+              content:
+                "❌ 找不到這個團隊，請重新開啟排團畫面。",
+              ephemeral:
+                true
+            });
+          }
 
 
           const chosenKeys =
