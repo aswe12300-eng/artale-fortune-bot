@@ -1700,6 +1700,7 @@ if (
   ephemeral:
     true
 });
+}
 
         if (
           !interaction.isStringSelectMenu()
