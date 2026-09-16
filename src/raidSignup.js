@@ -528,7 +528,7 @@ function buildBossSelect() {
         "選擇想打的王（可複選）"
       )
       .setMinValues(1)
-      .setMaxValues(4)
+      .setMaxValues(5)
       .addOptions(
         {
           label: "普拉",
@@ -549,6 +549,11 @@ function buildBossSelect() {
           label: "龍王",
           value: "龍王",
           emoji: "🐲"
+        },
+        {
+          label: "樹王",
+          value: "樹王",
+          emoji: "🌳"
         }
       );
 
