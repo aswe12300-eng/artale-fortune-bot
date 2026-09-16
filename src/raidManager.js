@@ -462,6 +462,11 @@ function buildBossSelect(
     label: "龍王",
     value: `${weekRange}|龍王`,
     emoji: "🐲"
+  },
+  {
+    label: "樹王",
+    value: `${weekRange}|樹王`,
+    emoji: "🌳"
   }
 );
 
@@ -677,6 +682,12 @@ if (
   emoji = "🐲";
 }
 
+if (
+  item.bossName === "樹王"
+) {
+  emoji = "🌳";
+}
+
         return {
           label:
             `${weekText}｜${item.bossName}`,
@@ -773,6 +784,12 @@ function getBossEmoji(
     return "🐲";
   }
 
+  if (
+    bossName === "樹王"
+  ) {
+    return "🌳";
+  }
+
   return "👹";
 }
 
@@ -845,7 +862,8 @@ async function buildAllRaidListPages() {
     "普拉",
     "炎魔",
     "困拉",
-    "龍王"
+    "龍王",
+    "樹王"
   ];
 
   const sortedGroups =
