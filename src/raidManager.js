@@ -655,10 +655,17 @@ function buildWeekBossSelect(
       .map(item => {
 
         const weekText =
-          item.weekRange ===
-          currentWeek
-            ? "本週"
-            : "下週";
+          item.weekRange
+            .split("～")
+            .map(dateText => {
+              const parts =
+                dateText.split("/");
+
+              return (
+                `${parts[1]}/${parts[2]}`
+              );
+            })
+            .join("～");
 
         let emoji = "👹";
 
