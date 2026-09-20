@@ -17,6 +17,7 @@ const { google } = require("googleapis");
 
 const RAID_CHANNEL_ID = "1493861592151097344";
 const RAID_SHEET_NAME = "突襲報名";
+const RAID_CHARACTER_SHEET_NAME = "王團常用角色";
 
 const SHEET_ID = process.env.SHEET_ID;
 const GOOGLE_CLIENT_EMAIL = process.env.GOOGLE_CLIENT_EMAIL;
@@ -283,10 +284,11 @@ function getSignupPanelEmbed(
 
   "請點下方按鈕填寫可以參加的突襲王與時段。\n\n" +
 
-  "📝 **我要報名**：新增一隻角色\n" +
+  "📝 **我要報名**：選擇常用角色或新增角色\n" +
   "✏️ **修改報名**：選擇角色後修改\n" +
   "❌ **取消報名**：取消指定角色\n" +
-  "📋 **我的報名**：查看這一期所有角色\n\n" +
+  "📋 **我的報名**：查看這一期所有角色\n" +
+  "🆘 **忘記報名**：截止後仍可補報\n\n" +
 
   "━━━━━━━━━━━━━━\n\n" +
 
@@ -303,7 +305,7 @@ function getSignupPanelEmbed(
 )
     .setFooter({
       text:
-        "星期日 24:00 截止｜截止後無法新增、修改或取消"
+        "星期日 24:00 截止｜截止後可使用「忘記報名」補報"
     });
 }
 
@@ -353,6 +355,16 @@ function getSignupPanelButtons() {
         .setEmoji("📋")
         .setStyle(
           ButtonStyle.Secondary
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_signup_late"
+        )
+        .setLabel("忘記報名")
+        .setEmoji("🆘")
+        .setStyle(
+          ButtonStyle.Secondary
         )
     );
 }
@@ -374,6 +386,8 @@ function buildBasicInfoModal(
       .setTitle(
         mode === "edit"
           ? "修改突襲王報名"
+          : mode === "late"
+          ? "忘記報名｜補報"
           : "突襲王報名"
       );
 
@@ -713,6 +727,252 @@ function formatTimes(values) {
 }
 
 
+
+// ==============================
+// 王團常用角色
+// 僅供王團報名使用，不會修改公會角色登記
+// A Discord ID
+// B Discord名稱
+// C 角色ID
+// D 角色名稱
+// E 職業
+// F 等級
+// G 表功
+// H 最後更新
+// ==============================
+
+async function ensureRaidCharacterSheet() {
+  const metadata =
+    await sheets.spreadsheets.get({
+      spreadsheetId: SHEET_ID
+    });
+
+  const exists =
+    metadata.data.sheets?.some(
+      sheet =>
+        sheet.properties?.title ===
+        RAID_CHARACTER_SHEET_NAME
+    );
+
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title:
+                  RAID_CHARACTER_SHEET_NAME
+              }
+            }
+          }
+        ]
+      }
+    });
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range:
+      `${RAID_CHARACTER_SHEET_NAME}!A1:H1`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[
+        "Discord ID",
+        "Discord名稱",
+        "角色ID",
+        "角色名稱",
+        "職業",
+        "等級",
+        "表功",
+        "最後更新"
+      ]]
+    }
+  });
+}
+
+async function getRaidCharacters(userId) {
+  await ensureRaidCharacterSheet();
+
+  const res =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range:
+        `${RAID_CHARACTER_SHEET_NAME}!A2:H`
+    });
+
+  const rows =
+    res.data.values || [];
+
+  return rows
+    .map(
+      (row, index) => ({
+        rowNumber: index + 2,
+        row,
+        userId: row[0] || "",
+        discordName: row[1] || "",
+        characterId: row[2] || "",
+        characterName: row[3] || "",
+        job: row[4] || "",
+        level: row[5] || "",
+        power: row[6] || "",
+        updatedAt: row[7] || ""
+      })
+    )
+    .filter(
+      item =>
+        item.userId === userId
+    );
+}
+
+async function saveRaidCharacter(
+  userId,
+  data
+) {
+  await ensureRaidCharacterSheet();
+
+  const characters =
+    await getRaidCharacters(
+      userId
+    );
+
+  let existing = null;
+
+  if (data.savedCharacterId) {
+    existing =
+      characters.find(
+        item =>
+          item.characterId ===
+          data.savedCharacterId
+      ) || null;
+  }
+
+  // 新角色若名稱已存在，沿用該筆，避免重複建立
+  if (!existing) {
+    existing =
+      characters.find(
+        item =>
+          item.characterName ===
+          data.characterName
+      ) || null;
+  }
+
+  const characterId =
+    existing?.characterId ||
+    `${userId}_${Date.now()}`;
+
+  const values = [[
+    userId,
+    data.discordName || "",
+    characterId,
+    data.characterName || "",
+    data.job || "",
+    data.level || "",
+    data.power || "",
+    new Date().toLocaleString(
+      "zh-TW",
+      {
+        timeZone: "Asia/Taipei"
+      }
+    )
+  ]];
+
+  if (existing) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range:
+        `${RAID_CHARACTER_SHEET_NAME}!A${existing.rowNumber}:H${existing.rowNumber}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values
+      }
+    });
+  } else {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range:
+        `${RAID_CHARACTER_SHEET_NAME}!A:H`,
+      valueInputOption: "RAW",
+      insertDataOption:
+        "INSERT_ROWS",
+      requestBody: {
+        values
+      }
+    });
+  }
+
+  return characterId;
+}
+
+function buildSavedCharacterSelect(
+  characters,
+  mode = "new"
+) {
+  const options =
+    characters
+      .slice(0, 24)
+      .map(
+        item => ({
+          label:
+            `${item.characterName || "未命名"}｜${item.job || "未知職業"} Lv.${item.level || "-"}`.slice(
+              0,
+              100
+            ),
+          description:
+            `表功 ${item.power || "-"}`.slice(
+              0,
+              100
+            ),
+          value:
+            item.characterId
+        })
+      );
+
+  options.push({
+    label: "新增其他角色",
+    description:
+      "這次使用新的角色資料",
+    value: "__NEW__",
+    emoji: "➕"
+  });
+
+  const menu =
+    new StringSelectMenuBuilder()
+      .setCustomId(
+        mode === "late"
+          ? "raid_signup_saved_character_late"
+          : "raid_signup_saved_character"
+      )
+      .setPlaceholder(
+        "選擇王團常用角色"
+      )
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(options);
+
+  return new ActionRowBuilder()
+    .addComponents(menu);
+}
+
+function raidCharacterToModalRow(
+  character
+) {
+  return [
+    "",
+    "",
+    "",
+    character.characterName || "",
+    character.job || "",
+    character.level || "",
+    character.power || "",
+    "",
+    "",
+    ""
+  ];
+}
+
+
 // ==============================
 // 試算表
 // ==============================
@@ -830,7 +1090,9 @@ async function saveSignup(
         }
       ),
 
-    "已報名"
+    data.isLateSignup
+      ? "補報"
+      : "已報名"
   ];
 
 
@@ -1228,20 +1490,116 @@ function setupRaidSignup(client) {
             }
 
 
+            const savedCharacters =
+              await getRaidCharacters(
+                interaction.user.id
+              );
+
             signupSessions.set(
               interaction.user.id,
               {
                 mode:
                   "new",
 
-                weekRange
+                weekRange,
+
+                isLateSignup:
+                  false
               }
             );
 
+            if (
+              savedCharacters.length > 0
+            ) {
+              return interaction.reply({
+                content:
+                  `### 🎮 第 1 步：選擇王團角色\n` +
+                  `📅 ${weekRange}\n\n` +
+                  "選擇後，角色名稱、職業、等級、表功都還可以再修改。",
+
+                components: [
+                  buildSavedCharacterSelect(
+                    savedCharacters,
+                    "new"
+                  )
+                ],
+
+                ephemeral:
+                  true
+              });
+            }
 
             return interaction.showModal(
               buildBasicInfoModal(
                 "new"
+              )
+            );
+          }
+
+
+          // =====================
+          // 忘記報名／補報
+          // =====================
+
+          if (
+            interaction.customId ===
+            "raid_signup_late"
+          ) {
+            if (
+              isSignupOpen(
+                weekRange
+              )
+            ) {
+              return interaction.reply({
+                content:
+                  "目前報名尚未截止，請直接使用「📝 我要報名」。",
+                ephemeral:
+                  true
+              });
+            }
+
+            const savedCharacters =
+              await getRaidCharacters(
+                interaction.user.id
+              );
+
+            signupSessions.set(
+              interaction.user.id,
+              {
+                mode:
+                  "late",
+
+                weekRange,
+
+                isLateSignup:
+                  true
+              }
+            );
+
+            if (
+              savedCharacters.length > 0
+            ) {
+              return interaction.reply({
+                content:
+                  `### 🆘 忘記報名｜選擇角色\n` +
+                  `📅 ${weekRange}\n\n` +
+                  "選擇後仍可修改角色名稱、職業、等級與表功。",
+
+                components: [
+                  buildSavedCharacterSelect(
+                    savedCharacters,
+                    "late"
+                  )
+                ],
+
+                ephemeral:
+                  true
+              });
+            }
+
+            return interaction.showModal(
+              buildBasicInfoModal(
+                "late"
               )
             );
           }
@@ -1449,7 +1807,9 @@ function setupRaidSignup(client) {
             interaction.customId !==
               "raid_signup_modal_new" &&
             interaction.customId !==
-              "raid_signup_modal_edit"
+              "raid_signup_modal_edit" &&
+            interaction.customId !==
+              "raid_signup_modal_late"
           ) {
             return;
           }
@@ -1479,6 +1839,7 @@ function setupRaidSignup(client) {
 
 
           if (
+            !oldSession.isLateSignup &&
             !isSignupOpen(
               weekRange
             )
@@ -1505,6 +1866,9 @@ function setupRaidSignup(client) {
               interaction.customId
                 .endsWith("_edit")
                 ? "edit"
+                : interaction.customId
+                    .endsWith("_late")
+                ? "late"
                 : "new",
 
             weekRange,
@@ -1597,6 +1961,119 @@ function setupRaidSignup(client) {
           ) {
             return;
           }
+
+          // =====================
+          // 我要報名／補報：選王團常用角色
+          // =====================
+
+          if (
+            interaction.customId ===
+              "raid_signup_saved_character" ||
+            interaction.customId ===
+              "raid_signup_saved_character_late"
+          ) {
+            const selectSession =
+              signupSessions.get(
+                interaction.user.id
+              );
+
+            if (
+              !selectSession ||
+              !selectSession.weekRange
+            ) {
+              return interaction.update({
+                content:
+                  "⚠️ 操作已逾時，請重新開始報名。",
+                components: []
+              });
+            }
+
+            const isLate =
+              interaction.customId ===
+                "raid_signup_saved_character_late";
+
+            if (
+              !isLate &&
+              !isSignupOpen(
+                selectSession.weekRange
+              )
+            ) {
+              signupSessions.delete(
+                interaction.user.id
+              );
+
+              return interaction.update({
+                content:
+                  closedMessage(
+                    selectSession.weekRange
+                  ),
+                components: []
+              });
+            }
+
+            const selectedId =
+              interaction.values[0];
+
+            if (
+              selectedId === "__NEW__"
+            ) {
+              selectSession.savedCharacterId =
+                null;
+
+              signupSessions.set(
+                interaction.user.id,
+                selectSession
+              );
+
+              return interaction.showModal(
+                buildBasicInfoModal(
+                  isLate
+                    ? "late"
+                    : "new"
+                )
+              );
+            }
+
+            const characters =
+              await getRaidCharacters(
+                interaction.user.id
+              );
+
+            const character =
+              characters.find(
+                item =>
+                  item.characterId ===
+                  selectedId
+              );
+
+            if (!character) {
+              return interaction.update({
+                content:
+                  "❌ 找不到這隻王團常用角色，請重新操作。",
+                components: []
+              });
+            }
+
+            selectSession.savedCharacterId =
+              character.characterId;
+
+            signupSessions.set(
+              interaction.user.id,
+              selectSession
+            );
+
+            return interaction.showModal(
+              buildBasicInfoModal(
+                isLate
+                  ? "late"
+                  : "new",
+                raidCharacterToModalRow(
+                  character
+                )
+              )
+            );
+          }
+
 
           // =====================
           // 修改：選角色
@@ -1794,6 +2271,7 @@ function setupRaidSignup(client) {
 
 
           if (
+            !session.isLateSignup &&
             !isSignupOpen(
               session.weekRange
             )
@@ -1965,6 +2443,13 @@ function setupRaidSignup(client) {
                 session
               );
 
+            // 將本次填寫的角色名稱／職業／等級／表功
+            // 更新成下次王團報名的預設資料
+            await saveRaidCharacter(
+              interaction.user.id,
+              session
+            );
+
 
             signupSessions.delete(
               interaction.user.id
@@ -1977,7 +2462,9 @@ function setupRaidSignup(client) {
                   "#2ECC71"
                 )
                 .setTitle(
-                  result === "updated"
+                  session.isLateSignup
+                    ? "🆘 突襲王補報完成"
+                    : result === "updated"
                     ? "✅ 突襲王報名已更新"
                     : "✅ 突襲王報名完成"
                 )
