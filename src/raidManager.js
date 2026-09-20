@@ -203,7 +203,9 @@ async function getWeekSignups(
   return rows.filter(
     row =>
       row[0] === weekRange &&
-      row[11] !== "已取消"
+      row[11] !== "已取消" &&
+      row[11] !== "補報" &&
+      row[11] !== "補報已拒絕"
   );
 }
 
@@ -560,7 +562,9 @@ async function buildWeekBossOptions() {
       row[11];
 
     if (
-      status === "已取消"
+      status === "已取消" ||
+      status === "補報" ||
+      status === "補報已拒絕"
     ) {
       continue;
     }
@@ -814,7 +818,9 @@ async function buildAllRaidListPages() {
           row[0] === currentWeek ||
           row[0] === nextWeek
         ) &&
-        row[11] !== "已取消"
+        row[11] !== "已取消" &&
+        row[11] !== "補報" &&
+        row[11] !== "補報已拒絕"
     );
 
   const groups =
@@ -1314,6 +1320,138 @@ function buildTimeDetailEmbed(
 
 
 // ==============================
+// 補報審核
+// ==============================
+
+async function getLateSignupRows() {
+  const rows =
+    await getRaidRows();
+
+  const currentWeek =
+    getCurrentRaidWeekRange();
+
+  const nextWeek =
+    getNextRaidWeekRange();
+
+  return rows
+    .map(
+      (row, index) => ({
+        rowNumber:
+          index + 2,
+        row
+      })
+    )
+    .filter(
+      item =>
+        (
+          item.row[0] === currentWeek ||
+          item.row[0] === nextWeek
+        ) &&
+        item.row[11] === "補報"
+    );
+}
+
+async function updateLateSignupStatus(
+  rowNumber,
+  status
+) {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId:
+      SHEET_ID,
+
+    range:
+      `${RAID_SHEET_NAME}!L${rowNumber}`,
+
+    valueInputOption:
+      "RAW",
+
+    requestBody: {
+      values: [[status]]
+    }
+  });
+}
+
+function buildLateSignupEmbed(
+  item,
+  index,
+  total
+) {
+  const row =
+    item.row;
+
+  return new EmbedBuilder()
+    .setColor("#E67E22")
+    .setTitle(
+      "🆘 王團補報審核"
+    )
+    .setDescription(
+      `📅 **${row[0] || "-"}**\n\n` +
+      `👤 Discord：**${row[2] || "未知成員"}**\n` +
+      `🎮 角色：**${row[3] || "未命名角色"}**\n` +
+      `🧙 職業：${row[4] || "-"}\n` +
+      `⭐ 等級：${row[5] || "-"}\n` +
+      `⚔️ 表功：${row[6] || "-"}\n` +
+      `👑 王：${row[7] || "-"}\n` +
+      `🕒 時段：\n${row[8] || "未填寫"}\n` +
+      (
+        row[9] &&
+        row[9] !== "無"
+          ? `📝 備註：${row[9]}\n`
+          : ""
+      ) +
+      `\n📌 待審核：**${index + 1} / ${total}**`
+    )
+    .setFooter({
+      text:
+        "接受後會列入正常突襲名單；拒絕後不會進入排團。"
+    });
+}
+
+function buildLateSignupButtons() {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_late_accept"
+        )
+        .setLabel(
+          "接受補報"
+        )
+        .setEmoji("✅")
+        .setStyle(
+          ButtonStyle.Success
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_late_reject"
+        )
+        .setLabel(
+          "拒絕補報"
+        )
+        .setEmoji("❌")
+        .setStyle(
+          ButtonStyle.Danger
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_late_close"
+        )
+        .setLabel(
+          "關閉"
+        )
+        .setStyle(
+          ButtonStyle.Secondary
+        )
+    );
+}
+
+const raidLateReviewSessions =
+  new Map();
+
+
+// ==============================
 // 權限
 // ==============================
 
@@ -1403,7 +1541,21 @@ components: [
     weekBossOptions
   ),
 
-  buildAllListButton()
+  buildAllListButton(),
+
+  new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          "raid_manager_late_review"
+        )
+        .setLabel(
+          "🆘 補報審核"
+        )
+        .setStyle(
+          ButtonStyle.Primary
+        )
+    )
 ]
 });
      
@@ -1420,6 +1572,195 @@ components: [
     async interaction => {
 
       try {
+
+        // ==============================
+        // 補報審核
+        // ==============================
+
+        if (
+          interaction.isButton() &&
+          interaction.customId ===
+            "raid_manager_late_review"
+        ) {
+          if (
+            !hasManagerPermission(
+              interaction
+            )
+          ) {
+            return interaction.reply({
+              content:
+                "❌ 只有管理員可以審核補報。",
+              ephemeral:
+                true
+            });
+          }
+
+          await interaction.deferReply({
+            ephemeral:
+              true
+          });
+
+          const items =
+            await getLateSignupRows();
+
+          if (
+            items.length === 0
+          ) {
+            return interaction.editReply({
+              content:
+                "✅ 目前沒有待審核的補報。",
+              embeds: [],
+              components: []
+            });
+          }
+
+          raidLateReviewSessions.set(
+            interaction.user.id,
+            {
+              items,
+              index: 0
+            }
+          );
+
+          return interaction.editReply({
+            embeds: [
+              buildLateSignupEmbed(
+                items[0],
+                0,
+                items.length
+              )
+            ],
+
+            components: [
+              buildLateSignupButtons()
+            ]
+          });
+        }
+
+
+        if (
+          interaction.isButton() &&
+          (
+            interaction.customId ===
+              "raid_manager_late_accept" ||
+            interaction.customId ===
+              "raid_manager_late_reject"
+          )
+        ) {
+          if (
+            !hasManagerPermission(
+              interaction
+            )
+          ) {
+            return interaction.reply({
+              content:
+                "❌ 只有管理員可以審核補報。",
+              ephemeral:
+                true
+            });
+          }
+
+          const session =
+            raidLateReviewSessions.get(
+              interaction.user.id
+            );
+
+          if (
+            !session ||
+            !session.items[
+              session.index
+            ]
+          ) {
+            return interaction.reply({
+              content:
+                "⚠️ 補報審核資料已失效，請重新執行 `-突襲名單`。",
+              ephemeral:
+                true
+            });
+          }
+
+          await interaction.deferUpdate();
+
+          const current =
+            session.items[
+              session.index
+            ];
+
+          const accepted =
+            interaction.customId ===
+              "raid_manager_late_accept";
+
+          await updateLateSignupStatus(
+            current.rowNumber,
+            accepted
+              ? "已報名"
+              : "補報已拒絕"
+          );
+
+          session.index += 1;
+
+          if (
+            session.index >=
+              session.items.length
+          ) {
+            raidLateReviewSessions.delete(
+              interaction.user.id
+            );
+
+            return interaction.editReply({
+              content:
+                accepted
+                  ? "✅ 已接受補報，目前沒有其他待審核資料。"
+                  : "❌ 已拒絕補報，目前沒有其他待審核資料。",
+
+              embeds: [],
+              components: []
+            });
+          }
+
+          const next =
+            session.items[
+              session.index
+            ];
+
+          return interaction.editReply({
+            content:
+              accepted
+                ? "✅ 上一筆補報已接受。"
+                : "❌ 上一筆補報已拒絕。",
+
+            embeds: [
+              buildLateSignupEmbed(
+                next,
+                session.index,
+                session.items.length
+              )
+            ],
+
+            components: [
+              buildLateSignupButtons()
+            ]
+          });
+        }
+
+
+        if (
+          interaction.isButton() &&
+          interaction.customId ===
+            "raid_manager_late_close"
+        ) {
+          raidLateReviewSessions.delete(
+            interaction.user.id
+          );
+
+          return interaction.update({
+            content:
+              "✅ 已關閉補報審核。",
+            embeds: [],
+            components: []
+          });
+        }
+
 
         // ==============================
 // 查看全部名單
