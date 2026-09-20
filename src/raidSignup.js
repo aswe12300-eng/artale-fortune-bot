@@ -1490,6 +1490,13 @@ function setupRaidSignup(client) {
             }
 
 
+            // Google Sheet 查詢可能超過 Discord interaction 期限，
+            // 所以先回覆 Discord，再查詢常用角色。
+            await interaction.deferReply({
+              ephemeral:
+                true
+            });
+
             const savedCharacters =
               await getRaidCharacters(
                 interaction.user.id
@@ -1504,36 +1511,29 @@ function setupRaidSignup(client) {
                 weekRange,
 
                 isLateSignup:
-                  false
+                  false,
+
+                savedCharacters
               }
             );
 
-            if (
-              savedCharacters.length > 0
-            ) {
-              return interaction.reply({
-                content:
-                  `### 🎮 第 1 步：選擇王團角色\n` +
-                  `📅 ${weekRange}\n\n` +
-                  "選擇後，角色名稱、職業、等級、表功都還可以再修改。",
+            return interaction.editReply({
+              content:
+                `### 🎮 第 1 步：選擇王團角色\n` +
+                `📅 ${weekRange}\n\n` +
+                (
+                  savedCharacters.length > 0
+                    ? "選擇後，角色名稱、職業、等級、表功都還可以再修改。"
+                    : "目前還沒有常用角色，請選擇「➕ 新增其他角色」。"
+                ),
 
-                components: [
-                  buildSavedCharacterSelect(
-                    savedCharacters,
-                    "new"
-                  )
-                ],
-
-                ephemeral:
-                  true
-              });
-            }
-
-            return interaction.showModal(
-              buildBasicInfoModal(
-                "new"
-              )
-            );
+              components: [
+                buildSavedCharacterSelect(
+                  savedCharacters,
+                  "new"
+                )
+              ]
+            });
           }
 
 
@@ -1558,6 +1558,11 @@ function setupRaidSignup(client) {
               });
             }
 
+            await interaction.deferReply({
+              ephemeral:
+                true
+            });
+
             const savedCharacters =
               await getRaidCharacters(
                 interaction.user.id
@@ -1572,36 +1577,29 @@ function setupRaidSignup(client) {
                 weekRange,
 
                 isLateSignup:
-                  true
+                  true,
+
+                savedCharacters
               }
             );
 
-            if (
-              savedCharacters.length > 0
-            ) {
-              return interaction.reply({
-                content:
-                  `### 🆘 忘記報名｜選擇角色\n` +
-                  `📅 ${weekRange}\n\n` +
-                  "選擇後仍可修改角色名稱、職業、等級與表功。",
+            return interaction.editReply({
+              content:
+                `### 🆘 忘記報名｜選擇角色\n` +
+                `📅 ${weekRange}\n\n` +
+                (
+                  savedCharacters.length > 0
+                    ? "選擇後仍可修改角色名稱、職業、等級與表功。"
+                    : "目前還沒有常用角色，請選擇「➕ 新增其他角色」。"
+                ),
 
-                components: [
-                  buildSavedCharacterSelect(
-                    savedCharacters,
-                    "late"
-                  )
-                ],
-
-                ephemeral:
-                  true
-              });
-            }
-
-            return interaction.showModal(
-              buildBasicInfoModal(
-                "late"
-              )
-            );
+              components: [
+                buildSavedCharacterSelect(
+                  savedCharacters,
+                  "late"
+                )
+              ]
+            });
           }
 
 
@@ -1630,6 +1628,11 @@ function setupRaidSignup(client) {
             }
 
 
+            await interaction.deferReply({
+              ephemeral:
+                true
+            });
+
             const signups =
               await findAllWeekSignups(
                 interaction.user.id,
@@ -1640,28 +1643,30 @@ function setupRaidSignup(client) {
             if (
               signups.length === 0
             ) {
-              return interaction.reply({
+              return interaction.editReply({
                 content:
                   "❌ 這一期你還沒有報名資料，請先使用「我要報名」。",
-                ephemeral:
-                  true
+                components: []
               });
             }
 
 
-            // 記住這個選單是哪一週
+            // 記住這個選單是哪一週，並快取報名資料，
+            // 選角色時即可立即開 Modal，不必再等待 Google API。
             signupSessions.set(
               interaction.user.id,
               {
                 action:
                   "select_edit",
 
-                weekRange
+                weekRange,
+
+                signups
               }
             );
 
 
-            return interaction.reply({
+            return interaction.editReply({
               content:
                 `### ✏️ 選擇要修改的角色\n📅 ${weekRange}`,
 
@@ -1671,10 +1676,7 @@ function setupRaidSignup(client) {
                   signups,
                   "選擇要修改的角色"
                 )
-              ],
-
-              ephemeral:
-                true
+              ]
             });
           }
 
@@ -2035,9 +2037,8 @@ function setupRaidSignup(client) {
             }
 
             const characters =
-              await getRaidCharacters(
-                interaction.user.id
-              );
+              selectSession.savedCharacters ||
+              [];
 
             const character =
               characters.find(
@@ -2130,11 +2131,12 @@ function setupRaidSignup(client) {
 
 
             const existing =
-              await findWeekSignup(
-                interaction.user.id,
-                weekRange,
-                characterName
-              );
+              (selectSession.signups || [])
+                .find(
+                  item =>
+                    item.characterName ===
+                    characterName
+                );
 
 
             if (!existing) {
