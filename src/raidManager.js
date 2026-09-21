@@ -90,7 +90,11 @@ function parseYmd(text) {
 
 
 // ==============================
-// 本週：星期二～下星期一
+// 排團管理週次
+//
+// 報名週次本身仍維持「星期二～星期一」。
+// 只有管理員的排團管理在每週一 00:00（台灣時間）
+// 提前切換到隔天星期二開始的新王團週次。
 // ==============================
 
 function getCurrentRaidWeekRange() {
@@ -100,16 +104,12 @@ function getCurrentRaidWeekRange() {
   const day =
     now.getDay();
 
-  let diffToTuesday;
-
-  if (day === 0) {
-    diffToTuesday = -5;
-  } else if (day === 1) {
-    diffToTuesday = -6;
-  } else {
-    diffToTuesday =
-      2 - day;
-  }
+  const diffToTuesday =
+    day === 1
+      ? 1
+      : day === 0
+      ? -5
+      : 2 - day;
 
   const tuesday =
     new Date(now);
@@ -140,7 +140,7 @@ function getCurrentRaidWeekRange() {
 
 
 // ==============================
-// 下週
+// 下一個排團週次
 // ==============================
 
 function getNextRaidWeekRange() {
