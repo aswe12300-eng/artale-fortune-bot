@@ -648,7 +648,7 @@ function createFortuneEmbed(user, member, fortune) {
   const enhance = random(1, 100);
   const boss = random(1, 100);
   const gacha = random(1, 100);
-  const channel = random(1, 2500);
+  const channel = random(1, 1100);
   const luckyScore = random(1, 100);
 
  
