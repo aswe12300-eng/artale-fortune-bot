@@ -10,14 +10,17 @@ const CHANNEL_ID = "1559597571867943092";
 const SHEET_ID = process.env.SHEET_ID;
 const SUBMISSIONS_TAB = "變裝比賽作品";
 const VOTES_TAB = "變裝比賽選票";
+const TEST_VOTES_TAB = "變裝比賽測試選票";
 const STATE_TAB = "變裝比賽設定";
 const START_MS = Date.parse("2026-10-17T16:00:00Z"); // 10/18 00:00 台灣
 const END_MS = Date.parse("2026-10-29T15:59:59.999Z"); // 10/29 23:59 台灣
-const DEADLINE_MS = Date.parse("2026-10-30T15:59:00Z"); // 10/30 23:59 台灣
+const VOTE_START_MS = Date.parse("2026-10-30T03:59:00Z"); // 10/30 11:59 台灣
+const DEADLINE_MS = Date.parse("2026-10-31T16:00:00Z"); // 11/01 00:00 台灣，10/31 23:59 全分鐘可投票
 const PREFIX = "-變裝";
 const HEADERS = {
   [SUBMISSIONS_TAB]: ["作品訊息ID", "作者Discord ID", "作者名稱", "作品圖片URL", "作品訊息連結", "投稿時間", "審核狀態"],
   [VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間"],
+  [TEST_VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間"],
   [STATE_TAB]: ["設定", "值"]
 };
 
@@ -34,7 +37,7 @@ function locked(task) {
 function sheetRange(tab, range) { return `'${tab}'!${range}`; }
 function nowTaipei() { return new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false }); }
 function isAdmin(member) { return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild)); }
-function isOpen(state) { return state.open === "yes" && Date.now() < DEADLINE_MS && state.published !== "yes"; }
+function isOpen(state) { return state.open === "yes" && Date.now() >= VOTE_START_MS && Date.now() < DEADLINE_MS && state.published !== "yes"; }
 function imageAttachment(att) {
   return att.contentType?.startsWith("image/") || /\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(att.url || "");
 }
@@ -147,25 +150,36 @@ const reviewSessions = new Map();
 function votePanel() {
   return {
     embeds: [new EmbedBuilder().setColor(0x9B59B6).setTitle("🎃 EtheReal 萬聖節變裝大賽｜正式投票")
-      .setDescription("每位會員 **一票**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n⏰ **2026/10/30 23:59（台灣時間）截止**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
+      .setDescription("每位會員 **一票**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n🕒 **2026/10/30 11:59 開始投票**\n⏰ **2026/10/31 23:59 截止（台灣時間）**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("costume:vote:0").setLabel("🗳️ 我要投票／改票").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("costume:mine").setLabel("查看我的選票").setStyle(ButtonStyle.Secondary)
     )]
   };
 }
-function selectPage(candidates, page) {
+function testPanel() {
+  return {
+    embeds: [new EmbedBuilder().setColor(0x3498DB)
+      .setTitle("🧪 EtheReal 變裝比賽｜測試投票（非正式）")
+      .setDescription("這是測試模式，選票**不會計入正式比賽**。\n每人一票、禁止投自己、可改票。管理員可隨時結束測試。")],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("costume:testvote:0").setLabel("🧪 測試投票／改票").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("costume:testmine").setLabel("查看測試選票").setStyle(ButtonStyle.Secondary)
+    )]
+  };
+}
+function selectPage(candidates, page, testing = false) {
   const totalPages = Math.max(1, Math.ceil(candidates.length / 25));
   const p = Math.max(0, Math.min(page, totalPages - 1));
   const slice = candidates.slice(p * 25, (p + 1) * 25);
-  const menu = new StringSelectMenuBuilder().setCustomId("costume:select")
+  const menu = new StringSelectMenuBuilder().setCustomId(testing ? "costume:testselect" : "costume:select")
     .setPlaceholder(`選擇參賽作品（第 ${p + 1}/${totalPages} 頁）`)
     .addOptions(slice.map((c, i) => ({ label: `${p * 25 + i + 1}. ${c.author}`.slice(0, 100),
       description: `作品 ${c.id}`.slice(0, 100), value: c.id })));
   const components = [new ActionRowBuilder().addComponents(menu)];
   if (totalPages > 1) components.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`costume:vote:${p - 1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
-    new ButtonBuilder().setCustomId(`costume:vote:${p + 1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)
+    new ButtonBuilder().setCustomId(`${testing ? "costume:testvote" : "costume:vote"}:${p - 1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder().setCustomId(`${testing ? "costume:testvote" : "costume:vote"}:${p + 1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)
   ));
   return components;
 }
@@ -192,7 +206,7 @@ async function publish(client) {
     return `${rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : "🎭"} **第 ${rank} 名**｜<@${c.authorId}>：**${n} 票**｜[作品](${c.url})`;
   });
   const channel = await getChannel(client);
-  const text = `🏆 **EtheReal 萬聖節變裝大賽｜投票結果**\n\n${lines.join("\n") || "本次沒有核准作品。"}\n\n有效投票人數：${[...latest.values()].filter(id => validIds.has(id)).length} 人\n截止時間：2026/10/30 23:59（台灣時間）`;
+  const text = `🏆 **EtheReal 萬聖節變裝大賽｜投票結果**\n\n${lines.join("\n") || "本次沒有核准作品。"}\n\n有效投票人數：${[...latest.values()].filter(id => validIds.has(id)).length} 人\n截止時間：2026/10/31 23:59（台灣時間）`;
   // 分段避免 Discord 2000 字限制
   for (let i = 0; i < text.length; i += 1900) await channel.send({ content: text.slice(i, i + 1900), allowedMentions: { parse: [] } });
   await stateSet("published", "yes");
@@ -204,33 +218,91 @@ function setupCostumeVoting(client) {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
     if (!message.guild || !isAdmin(message.member)) return;
     const command = message.content.trim().slice(PREFIX.length).trim();
-    if (!["掃描", "審核", "開放", "狀態", "公布"].includes(command)) return;
+    if (!["掃描", "審核", "審核全部", "重設審核", "開放", "狀態", "公布", "測試", "測試結束"].includes(command)) return;
     try {
       if (command === "掃描") {
         await message.reply("🔎 正在掃描 10/18～10/29 的圖片投稿，請稍候……");
         const result = await locked(() => scan(client));
         return message.channel.send(`✅ 掃描完成，新增 **${result.count}** 件作品（檢查 ${result.examined} 則訊息）。請輸入 \`-變裝審核\`。`);
       }
-      if (command === "審核") {
+      if (command === "重設審核") {
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (state.open === "yes" || state.published === "yes") return "❌ 投票已開放或已公布，不能重設審核。";
+          const rows = await read(SUBMISSIONS_TAB);
+          let changed = 0;
+          for (let i = 0; i < rows.length; i++) {
+            if (rows[i][6] !== "已核准") continue;
+            rows[i][6] = "待審核";
+            await updateRow(SUBMISSIONS_TAB, i, rows[i]);
+            changed++;
+          }
+          return `✅ 已將 **${changed}** 件已核准作品改為待審核。請輸入 \`-變裝審核\` 逐件確認。`;
+        });
+        reviewSessions.clear();
+        return message.reply(result);
+      }
+      if (command === "審核" || command === "審核全部") {
         const rows = await locked(() => read(SUBMISSIONS_TAB));
-        const items = rows.map(candidateRow);
-        if (!items.length) return message.reply("目前沒有作品，請先執行 `-變裝掃描`。");
+        const items = rows.map(candidateRow).filter(c => command === "審核全部" || c.status === "待審核");
+        if (!items.length) return message.reply(command === "審核" ? "✅ 目前沒有待審核作品。如要重新查看所有作品，請輸入 `-變裝審核全部`。" : "目前沒有作品，請先執行 `-變裝掃描`。");
         reviewSessions.set(message.author.id, { items, index: 0 });
         return message.reply({ embeds: [reviewEmbed(items[0], 0, items.length)], components: reviewButtons() });
       }
       if (command === "狀態") {
         const [rows, state, votes] = await locked(async () => Promise.all([read(SUBMISSIONS_TAB), stateGet(), read(VOTES_TAB)]));
-        return message.reply(`🎃 作品 ${rows.length} 件｜核准 ${rows.filter(r => r[6] === "已核准").length} 件｜待審 ${rows.filter(r => r[6] === "待審核").length} 件\n投票：${state.open === "yes" ? "已開放" : "未開放／已截止"}｜已投票 ${votes.filter(r => r[0]).length} 人｜已公布：${state.published === "yes" ? "是" : "否"}`);
+        return message.reply(`🎃 作品 ${rows.length} 件｜核准 ${rows.filter(r => r[6] === "已核准").length} 件｜待審 ${rows.filter(r => r[6] === "待審核").length} 件\n投票：${state.open === "yes" ? "已開放" : "未開放／已截止"}｜已投票 ${votes.filter(r => r[0]).length} 人｜已公布：${state.published === "yes" ? "是" : "否"}\n🧪 測試模式：${state.testOpen === "yes" ? "進行中" : "未開啟"}`);
+      }
+      if (command === "測試") {
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (state.open === "yes" || state.published === "yes" || Date.now() >= VOTE_START_MS) {
+            return "❌ 正式投票已開始或已結束，不能再開啟測試模式。";
+          }
+          if (state.testOpen === "yes") return "⚠️ 測試模式已開啟，請先使用 `-變裝測試結束`。";
+          const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准");
+          if (!candidates.length) return "❌ 尚無已核准的參賽作品。";
+          // 清除前次測試資料，避免新一輪測試沿用舊票。
+          await initialize();
+          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:C") });
+          const panel = await message.channel.send(testPanel());
+          await stateSet("testPanelId", panel.id);
+          await stateSet("testChannelId", message.channel.id);
+          await stateSet("testOpen", "yes");
+          return `🧪 測試投票已建立（${candidates.length} 件核准作品）。測試票不計入正式結果。`;
+        });
+        return message.reply(result);
+      }
+      if (command === "測試結束") {
+        const result = await locked(async () => {
+          const state = await stateGet();
+          await stateSet("testOpen", "no");
+          await initialize();
+          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:C") });
+          if (state.testPanelId && state.testChannelId) {
+            try {
+              const ch = await client.channels.fetch(state.testChannelId);
+              const panel = await ch.messages.fetch(state.testPanelId);
+              await panel.edit({ embeds: [new EmbedBuilder().setColor(0x808080).setTitle("🧪 測試投票已結束")
+                .setDescription("測試選票已清除，不影響正式投票。")], components: [] });
+            } catch (err) { console.warn("[變裝測試] 無法移除舊測試面板：", err.message); }
+          }
+          return "✅ 測試已結束，測試選票已清除，正式選票完全不受影響。";
+        });
+        return message.reply(result);
       }
       if (command === "開放") {
         const result = await locked(async () => {
           const state = await stateGet();
+          if (Date.now() < VOTE_START_MS) return "⏳ 10/30 11:59（台灣時間）才可以正式開放投票。";
           if (Date.now() >= DEADLINE_MS) return "❌ 已超過投票截止時間。";
           if (state.open === "yes") return "⚠️ 投票已開放，請勿重複發佈。";
           if (state.published === "yes") return "❌ 結果已公布。";
           const rows = await read(SUBMISSIONS_TAB);
+          if (rows.some(r => r[6] === "待審核")) return "❌ 還有待審核作品，請先輸入 `-變裝審核` 完成審核。";
           if (!rows.some(r => r[6] === "已核准")) return "❌ 尚未核准任何作品。";
           const channel = await getChannel(client);
+          await stateSet("testOpen", "no");
           const panel = await channel.send(votePanel());
           await stateSet("panelId", panel.id);
           await stateSet("open", "yes");
@@ -258,7 +330,7 @@ function setupCostumeVoting(client) {
         if (interaction.customId !== "costume:next") {
           const changed = await locked(async () => {
             const state = await stateGet();
-            if (state.open === "yes") return false;
+            if (state.open === "yes" || state.published === "yes") return false;
             const rows = await read(SUBMISSIONS_TAB);
             const current = session.items[session.index];
             const index = rows.findIndex(r => r[0] === current.id);
@@ -269,48 +341,55 @@ function setupCostumeVoting(client) {
             }
             return true;
           });
-          if (!changed) return interaction.editReply({ content: "⚠️ 投票已開放，不能再變更參賽名單。", embeds: [], components: [] });
+          if (!changed) return interaction.editReply({ content: "⚠️ 投票已開放或已公布，不能再變更參賽名單。", embeds: [], components: [] });
         }
         session.index++;
         if (session.index >= session.items.length) {
           reviewSessions.delete(interaction.user.id);
-          return interaction.editReply({ content: "✅ 已瀏覽完所有作品。可輸入 `-變裝審核` 再次檢查。", embeds: [], components: [] });
+          return interaction.editReply({ content: "✅ 已瀏覽完所有作品。可輸入 `-變裝審核全部` 再次檢查。", embeds: [], components: [] });
         }
         return interaction.editReply({ embeds: [reviewEmbed(session.items[session.index], session.index, session.items.length)], components: reviewButtons() });
       }
-      if (interaction.customId === "costume:mine") {
+      if (interaction.customId === "costume:mine" || interaction.customId === "costume:testmine") {
+        const testing = interaction.customId === "costume:testmine";
         await interaction.deferReply({ ephemeral: true });
         const text = await locked(async () => {
-          const vote = (await read(VOTES_TAB)).find(r => r[0] === interaction.user.id);
+          if (testing && (await stateGet()).testOpen !== "yes") return "🧪 測試模式已結束。";
+          const vote = (await read(testing ? TEST_VOTES_TAB : VOTES_TAB)).find(r => r[0] === interaction.user.id);
           if (!vote) return "你目前還沒有投票。";
           const c = (await read(SUBMISSIONS_TAB)).map(candidateRow).find(c => c.id === vote[1]);
           return c ? `🗳️ 你目前投給 **${c.author}** 的作品：${c.url}` : "你的原選票對應作品已不存在，請聯絡管理員。";
         });
         return interaction.editReply(text);
       }
-      if (interaction.customId.startsWith("costume:vote:")) {
+      if (interaction.customId.startsWith("costume:vote:") || interaction.customId.startsWith("costume:testvote:")) {
+        const testing = interaction.customId.startsWith("costume:testvote:");
         await interaction.deferReply({ ephemeral: true });
         const data = await locked(async () => ({ state: await stateGet(), candidates: (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准") }));
-        if (!isOpen(data.state)) return interaction.editReply("❌ 目前尚未開放投票，或投票已截止。");
+        if (testing ? data.state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(data.state))
+          return interaction.editReply("❌ 目前尚未開放投票，或投票已截止。");
         if (!data.candidates.length) return interaction.editReply("目前沒有可投票作品。");
         const page = Number(interaction.customId.split(":")[2]) || 0;
-        return interaction.editReply({ content: "🎃 請選擇你喜歡的作品（不可投給自己）；可重選改票。", components: selectPage(data.candidates, page) });
+        return interaction.editReply({ content: testing ? "🧪 測試投票（不計入正式票數），請選擇作品。" : "🎃 請選擇你喜歡的作品（不可投給自己）；可重選改票。", components: selectPage(data.candidates, page, testing) });
       }
-      if (interaction.customId === "costume:select") {
+      if (interaction.customId === "costume:select" || interaction.customId === "costume:testselect") {
+        const testing = interaction.customId === "costume:testselect";
         await interaction.deferReply({ ephemeral: true });
         const result = await locked(async () => {
           const state = await stateGet();
-          if (!isOpen(state)) return "❌ 投票已截止或尚未開放。";
+          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
+            return "❌ 投票已截止或尚未開放。";
           const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow);
           const candidate = candidates.find(c => c.id === interaction.values[0] && c.status === "已核准");
           if (!candidate) return "❌ 作品已被移除，請重新選擇。";
           if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品，請選其他參賽者。";
-          const rows = await read(VOTES_TAB);
+          const tab = testing ? TEST_VOTES_TAB : VOTES_TAB;
+          const rows = await read(tab);
           const index = rows.findIndex(r => r[0] === interaction.user.id);
           const values = [interaction.user.id, candidate.id, nowTaipei()];
-          if (index < 0) await append(VOTES_TAB, values);
-          else await updateRow(VOTES_TAB, index, values);
-          return `✅ ${index < 0 ? "投票成功" : "改票成功"}！你投給 **${candidate.author}** 的作品。\n${candidate.url}`;
+          if (index < 0) await append(tab, values);
+          else await updateRow(tab, index, values);
+          return `✅ ${testing ? "【測試】" : ""}${index < 0 ? "投票成功" : "改票成功"}！你投給 **${candidate.author}** 的作品。\n${candidate.url}`;
         });
         return interaction.editReply({ content: result, components: [] });
       }
