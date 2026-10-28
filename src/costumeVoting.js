@@ -504,27 +504,40 @@ function setupCostumeVoting(client) {
        if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
          const parts = interaction.customId.split(":");
          const testing = parts[1] === "testconfirm", slot = Number(parts[2]), candidateId = parts[3];
-         await interaction.deferReply({ ephemeral: true });
+         // 更新同一個私人預覽畫面，不會再跳出第二則訊息。
+         await interaction.deferUpdate();
          const result = await locked(async () => {
            const state = await stateGet();
-           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return "❌ 投票未開放或已截止。";
-           if (![1, 2].includes(slot)) return "❌ 票次無效。";
-           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
-           const candidate = candidates.find(c => c.id === candidateId && c.status === "已核准");
-           if (!candidate) return "❌ 作品已移除或未核准。";
-           if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品。";
+           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已截止。" };
+           if (![1, 2].includes(slot)) return { error: "❌ 票次無效。" };
+           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           const candidate = candidates.find(c => c.id === candidateId);
+           if (!candidate) return { error: "❌ 作品已移除或未核准。" };
+           if (candidate.authorId === interaction.user.id) return { error: "❌ 不能投票給自己的作品。請左右切換選擇其他作品。" };
            const tab = testing ? TEST_VOTES_TAB : VOTES_TAB;
            const rows = await read(tab);
            const ballots = userBallots(rows, interaction.user.id);
            const other = ballots.get(slot === 1 ? 2 : 1);
-           if (other?.row[1] === candidateId) return "❌ 兩票必須投給不同的作品，請選其他作品。";
+           if (other?.row[1] === candidateId) return { error: "❌ 兩票必須投給不同作品，請左右切換選擇其他作品。" };
            const current = ballots.get(slot);
            const values = [interaction.user.id, candidate.id, nowTaipei(), String(slot)];
            if (!current) await append(tab, values);
            else await updateRow(tab, current.index, values);
-           return `✅ ${testing ? "【測試】" : ""}第 ${slot} 票${current ? "修改" : "投票"}成功！投給 **${candidate.author}**。\n${candidate.url}`;
+           const success = `✅ ${testing ? "【測試】" : ""}第 ${slot} 票${current ? "修改" : "投票"}成功！投給 **${candidate.author}**。`;
+           if (slot === 1) {
+             // 第一票完成後，直接顯示第二票的第一件合格作品。
+             const nextIndex = candidates.findIndex(c => c.id !== candidate.id && c.authorId !== interaction.user.id);
+             if (nextIndex >= 0) return { next: true, success, candidates, index: nextIndex };
+             return { done: `${success}\n⚠️ 目前沒有其他可投的作品，第二票暫時無法投出。` };
+           }
+           const updated = userBallots(await read(tab), interaction.user.id);
+           const first = candidates.find(c => c.id === updated.get(1)?.row[1]);
+           const second = candidates.find(c => c.id === updated.get(2)?.row[1]);
+           return { done: `🎉 ${testing ? "【測試】" : ""}投票完成！\n\n🗳️ 第一票：${first ? `**${first.author}**` : "尚未投票"}\n🗳️ 第二票：${second ? `**${second.author}**` : "尚未投票"}\n\n截止前可以從投票公告重新進入修改選票。` };
          });
-         return interaction.editReply({ content: result, embeds: [], components: [] });
+         if (result.error) return interaction.editReply({ content: result.error, components: [] });
+         if (result.next) return interaction.editReply({ content: `${result.success}\n\n➡️ **現在自動進入第二票！** 請左右切換作品並確認。`, ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, 2) });
+         return interaction.editReply({ content: result.done, embeds: [], components: [] });
        }
     } catch (err) {
       console.error("[變裝互動]", err);
