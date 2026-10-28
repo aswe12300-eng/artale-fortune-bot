@@ -1,9 +1,10 @@
 "use strict";
 
 const { google } = require("googleapis");
+const sharp = require("sharp");
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  StringSelectMenuBuilder, PermissionFlagsBits
+  StringSelectMenuBuilder, PermissionFlagsBits, AttachmentBuilder
 } = require("discord.js");
 
 const CHANNEL_ID = "1559597571867943092";
@@ -28,6 +29,78 @@ let sheets;
 let initPromise;
 let queue = Promise.resolve();
 let tickBusy = false;
+// 作品資料快取：減少左右切換與作品總覽時反覆查詢 Google / Discord。
+let candidatesCache = { expires: 0, items: [] };
+let galleryCache = new Map();
+function clearCostumeCache() { candidatesCache.expires = 0; galleryCache.clear(); }
+async function approvedCandidates(client) {
+  if (Date.now() < candidatesCache.expires) return candidatesCache.items;
+  const items = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+  candidatesCache = { expires: Date.now() + 60000, items };
+  return items;
+}
+function svgEscape(s) { return String(s).replace(/[&<>"']/g, x => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[x])); }
+async function downloadThumbnail(url, width, height) {
+  if (!/^https:\/\//i.test(url || "")) throw new Error("無效圖片網址");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6500);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const type = response.headers.get("content-type") || "";
+    if (!type.startsWith("image/")) throw new Error("不是圖片");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > 12000000) throw new Error("圖片過大");
+    return await sharp(bytes, { animated: false }).rotate().resize(width, height, { fit: "contain", background: "#242631" }).png().toBuffer();
+  } finally { clearTimeout(timer); }
+}
+async function makeGallery(candidates, page = 0) {
+  const perPage = 20, cols = 4, cellW = 220, cellH = 244, photoH = 190;
+  const slice = candidates.slice(page * perPage, (page + 1) * perPage);
+  const cacheKey = slice.map(c => c.id + ":" + c.image).join("|");
+  const old = galleryCache.get(cacheKey);
+  if (old && Date.now() < old.expires) return old.buffer;
+  const rows = Math.ceil(slice.length / cols);
+  const width = cols * cellW, height = rows * cellH;
+  const composites = [];
+  await Promise.all(slice.map(async (c, i) => {
+    const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
+    try { composites.push({ input: await downloadThumbnail(c.image, cellW - 12, photoH - 8), left: x + 6, top: y + 6 }); }
+    catch (err) { console.warn(`[作品縮圖] ${c.id}: ${err.message}`); }
+  }));
+  const labels = slice.map((c, i) => {
+    const x = (i % cols) * cellW, y = Math.floor(i / cols) * cellH;
+    const num = String(page * perPage + i + 1).padStart(2, "0");
+    const name = svgEscape([...String(c.author)].slice(0, 11).join(""));
+    return `<rect x="${x+5}" y="${y+photoH+2}" width="${cellW-10}" height="42" rx="6" fill="#343747"/><text x="${x+12}" y="${y+photoH+29}" font-size="17" fill="white" font-family="sans-serif">${num} ${name}</text>`;
+  }).join("");
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${labels}</svg>`);
+  const buffer = await sharp({ create: { width, height, channels: 4, background: "#1b1d28" } })
+    .composite([...composites, { input: svg, left: 0, top: 0 }]).png().toBuffer();
+  galleryCache.set(cacheKey, { buffer, expires: Date.now() + 300000 });
+  if (galleryCache.size > 15) galleryCache.clear();
+  return buffer;
+}
+async function galleryPanel(candidates, page, testing, slot) {
+  const totalPages = Math.max(1, Math.ceil(candidates.length / 20));
+  const p = Math.max(0, Math.min(page, totalPages - 1));
+  const buffer = await makeGallery(candidates, p);
+  const embed = new EmbedBuilder().setColor(testing ? 0x3498DB : 0x9B59B6)
+    .setTitle(`${testing ? "🧪 測試｜" : "🎃 "}第 ${slot} 票｜參賽作品總覽`)
+    .setDescription(`一次查看作品縮圖（第 ${p + 1}/${totalPages} 頁）。請用下方選單選擇編號，查看大圖後再確認投票。\n❗每人兩票、不得重複或投給自己。`)
+    .setImage("attachment://costume_overview.png");
+  const mode = testing ? "test" : "real";
+  const slice = candidates.slice(p * 20, (p + 1) * 20);
+  const menu = new StringSelectMenuBuilder().setCustomId(`costume:select:${mode}:${slot}`)
+    .setPlaceholder("選擇編號／參賽者，查看大圖")
+    .addOptions(slice.map((c,i) => ({ label: `${String(p*20+i+1).padStart(2,"0")}｜${c.author}`.slice(0,100), value:c.id })));
+  const components = [new ActionRowBuilder().addComponents(menu)];
+  if (totalPages > 1) components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`costume:gallery:${mode}:${slot}:${p-1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder().setCustomId(`costume:gallery:${mode}:${slot}:${p+1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)));
+  return { content: "", embeds: [embed], files: [new AttachmentBuilder(buffer, { name: "costume_overview.png" })], components };
+}
+
 
 function locked(task) {
   const result = queue.then(task);
@@ -133,6 +206,7 @@ async function scan(client) {
     if (!last || last.createdTimestamp < START_MS) break;
     before = last.id;
   }
+  clearCostumeCache();
   return { count, examined };
 }
 // 舊版每人一列的選票視為第一票；新版 D 欄記錄票次（1 / 2）。
@@ -279,7 +353,7 @@ async function publish(client) {
   await stateSet("open", "no");
   if (state.publishing === "yes") return false;
   await stateSet("publishing", "yes");
-  const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+  const candidates = await approvedCandidates(client);
   const validIds = new Set(candidates.map(c => c.id));
    const votes = await read(VOTES_TAB);
    const { counts, voters, validVotes } = voteCount(votes, candidates);
@@ -359,6 +433,7 @@ function setupCostumeVoting(client) {
           }
           return `✅ 已將 **${changed}** 件已核准作品改為待審核。請輸入 \`-變裝審核\` 逐件確認。`;
         });
+        clearCostumeCache();
         reviewSessions.clear();
         return message.reply(result);
       }
@@ -466,6 +541,7 @@ function setupCostumeVoting(client) {
               rows[index][6] = interaction.customId === "costume:approve" ? "已核准" : "已排除";
               await updateRow(SUBMISSIONS_TAB, index, rows[index]);
               current.status = rows[index][6];
+              clearCostumeCache();
             }
             return true;
           });
@@ -497,17 +573,29 @@ function setupCostumeVoting(client) {
            return interaction.editReply("❌ 投票未開放或已截止。");
          return interaction.editReply({ content: "請先選擇要投哪一票（可修改）。", embeds: [], components: [slotPicker(testing)] });
        }
+       if (interaction.customId.startsWith("costume:gallery:")) {
+         const parts = interaction.customId.split(":");
+         const testing = parts[2] === "test", slot = Number(parts[3]), page = Number(parts[4]);
+         await interaction.deferUpdate();
+         const state = await locked(() => stateGet());
+         if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
+           return interaction.editReply({ content: "❌ 投票已結束。", embeds: [], components: [], attachments: [] });
+         const candidates = await locked(() => approvedCandidates(client));
+         if (![1,2].includes(slot) || !Number.isSafeInteger(page) || page < 0 || page >= Math.ceil(candidates.length/20))
+           return interaction.editReply({ content: "作品頁碼無效。", embeds: [], components: [], attachments: [] });
+         return interaction.editReply({ ...(await galleryPanel(candidates, page, testing, slot)), attachments: [] });
+       }
        if (interaction.customId.startsWith("costume:slot:") || interaction.customId.startsWith("costume:page:")) {
          const parts = interaction.customId.split(":");
          const testing = parts[2] === "test", slot = Number(parts[3]);
          const page = parts[1] === "page" ? Number(parts[4]) : 0;
          await interaction.deferReply({ ephemeral: true });
-         const data = await locked(async () => ({ state: await stateGet(), candidates: await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准")) }));
+         const data = await locked(async () => ({ state: await stateGet(), candidates: await approvedCandidates(client) }));
          if (testing ? data.state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(data.state))
            return interaction.editReply("❌ 投票未開放或已截止。");
          if (![1, 2].includes(slot) || !Number.isSafeInteger(page) || page < 0) return interaction.editReply("票次或頁碼無效。");
          if (!data.candidates.length) return interaction.editReply("沒有可投票作品。");
-         return interaction.editReply({ content: `🎃 第 ${slot} 票：請選擇作品，會先顯示圖片。`, embeds: [], components: selectPage(data.candidates, page, testing, slot) });
+         return interaction.editReply(await galleryPanel(data.candidates, page, testing, slot));
        }
        if (interaction.customId.startsWith("costume:browse:") || interaction.customId.startsWith("costume:list:")) {
          const parts = interaction.customId.split(":");
@@ -517,7 +605,7 @@ function setupCostumeVoting(client) {
            const state = await stateGet();
            if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已結束。" };
            if (![1, 2].includes(slot)) return { error: "票次無效。" };
-           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           const candidates = await approvedCandidates(client);
            if (!candidates.length) return { error: "沒有已核准作品。" };
            if (parts[1] === "list") return { list: true, candidates };
            const index = Number(parts[4]);
@@ -525,8 +613,8 @@ function setupCostumeVoting(client) {
            return { candidates, index };
          });
          if (result.error) return interaction.editReply({ content: result.error, embeds: [], components: [] });
-         if (result.list) return interaction.editReply({ content: `📋 第 ${slot} 票：選擇作品。`, embeds: [], components: selectPage(result.candidates, 0, testing, slot) });
-         return interaction.editReply({ content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot) });
+         if (result.list) return interaction.editReply({ ...(await galleryPanel(result.candidates, 0, testing, slot)), attachments: [] });
+         return interaction.editReply({ content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot), attachments: [] });
        }
        if (interaction.customId.startsWith("costume:select:")) {
          const parts = interaction.customId.split(":");
@@ -536,12 +624,12 @@ function setupCostumeVoting(client) {
            const state = await stateGet();
            if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已截止。" };
            if (![1, 2].includes(slot)) return { error: "票次無效。" };
-           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           const candidates = await approvedCandidates(client);
            const index = candidates.findIndex(c => c.id === interaction.values[0]);
            if (index < 0) return { error: "❌ 作品不存在或未核准。" };
            return { candidates, index };
          });
-         return interaction.editReply(result.error ? { content: result.error, embeds: [], components: [] } : { content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot) });
+         return interaction.editReply(result.error ? { content: result.error, embeds: [], components: [], attachments: [] } : { content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot), attachments: [] });
        }
        if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
          const parts = interaction.customId.split(":");
@@ -552,7 +640,7 @@ function setupCostumeVoting(client) {
            const state = await stateGet();
            if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已截止。" };
            if (![1, 2].includes(slot)) return { error: "❌ 票次無效。" };
-           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           const candidates = await approvedCandidates(client);
            const candidate = candidates.find(c => c.id === candidateId);
            if (!candidate) return { error: "❌ 作品已移除或未核准。" };
            if (candidate.authorId === interaction.user.id) return { error: "❌ 不能投票給自己的作品。請左右切換選擇其他作品。" };
@@ -578,7 +666,7 @@ function setupCostumeVoting(client) {
            return { done: `🎉 ${testing ? "【測試】" : ""}投票完成！\n\n🗳️ 第一票：${first ? `**${first.author}**` : "尚未投票"}\n🗳️ 第二票：${second ? `**${second.author}**` : "尚未投票"}\n\n截止前可以從投票公告重新進入修改選票。` };
          });
          if (result.error) return interaction.editReply({ content: result.error, components: [] });
-         if (result.next) return interaction.editReply({ content: `${result.success}\n\n➡️ **現在自動進入第二票！** 請左右切換作品並確認。`, ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, 2) });
+         if (result.next) return interaction.editReply({ ...(await galleryPanel(result.candidates, 0, testing, 2)), content: `${result.success}\n\n➡️ **現在自動進入第二票，請從縮圖總覽挑選！**`, attachments: [] });
          return interaction.editReply({ content: result.done, embeds: [], components: [] });
        }
     } catch (err) {
