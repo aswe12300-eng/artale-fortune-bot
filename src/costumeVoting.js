@@ -1,0 +1,340 @@
+"use strict";
+
+const { google } = require("googleapis");
+const {
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  StringSelectMenuBuilder, PermissionFlagsBits
+} = require("discord.js");
+
+const CHANNEL_ID = "1559597571867943092";
+const SHEET_ID = process.env.SHEET_ID;
+const SUBMISSIONS_TAB = "變裝比賽作品";
+const VOTES_TAB = "變裝比賽選票";
+const STATE_TAB = "變裝比賽設定";
+const START_MS = Date.parse("2026-10-17T16:00:00Z"); // 10/18 00:00 台灣
+const END_MS = Date.parse("2026-10-29T15:59:59.999Z"); // 10/29 23:59 台灣
+const DEADLINE_MS = Date.parse("2026-10-30T15:59:00Z"); // 10/30 23:59 台灣
+const PREFIX = "-變裝";
+const HEADERS = {
+  [SUBMISSIONS_TAB]: ["作品訊息ID", "作者Discord ID", "作者名稱", "作品圖片URL", "作品訊息連結", "投稿時間", "審核狀態"],
+  [VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間"],
+  [STATE_TAB]: ["設定", "值"]
+};
+
+let sheets;
+let initPromise;
+let queue = Promise.resolve();
+let tickBusy = false;
+
+function locked(task) {
+  const result = queue.then(task);
+  queue = result.catch(err => console.error("[變裝投票]", err));
+  return result;
+}
+function sheetRange(tab, range) { return `'${tab}'!${range}`; }
+function nowTaipei() { return new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false }); }
+function isAdmin(member) { return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild)); }
+function isOpen(state) { return state.open === "yes" && Date.now() < DEADLINE_MS && state.published !== "yes"; }
+function imageAttachment(att) {
+  return att.contentType?.startsWith("image/") || /\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(att.url || "");
+}
+
+async function initialize() {
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    if (!SHEET_ID || !process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error("缺少 SHEET_ID / GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY");
+    }
+    const auth = new google.auth.JWT({
+      email: process.env.GOOGLE_CLIENT_EMAIL,
+      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+    });
+    sheets = google.sheets({ version: "v4", auth });
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: "sheets.properties.title" });
+    const existing = new Set((meta.data.sheets || []).map(x => x.properties.title));
+    const missing = Object.keys(HEADERS).filter(name => !existing.has(name));
+    if (missing.length) {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: {
+        requests: missing.map(title => ({ addSheet: { properties: { title } } }))
+      }});
+    }
+    for (const [name, headers] of Object.entries(HEADERS)) {
+      const result = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: sheetRange(name, "A1:G1") });
+      if (!(result.data.values || []).length) {
+        await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID,
+          range: sheetRange(name, `A1:${String.fromCharCode(64 + headers.length)}1`),
+          valueInputOption: "RAW", requestBody: { values: [headers] } });
+      }
+    }
+  })().catch(err => { initPromise = undefined; throw err; });
+  return initPromise;
+}
+async function read(tab) {
+  await initialize();
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: sheetRange(tab, "A2:G") });
+  return response.data.values || [];
+}
+async function append(tab, values) {
+  await initialize();
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: sheetRange(tab, "A:G"),
+    valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: [values] } });
+}
+async function updateRow(tab, index, values) {
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID,
+    range: sheetRange(tab, `A${index + 2}:${String.fromCharCode(64 + values.length)}${index + 2}`),
+    valueInputOption: "RAW", requestBody: { values: [values] } });
+}
+async function stateGet() {
+  const rows = await read(STATE_TAB);
+  return Object.fromEntries(rows.filter(r => r[0]).map(r => [r[0], r[1] || ""]));
+}
+async function stateSet(key, value) {
+  const rows = await read(STATE_TAB);
+  const index = rows.findIndex(r => r[0] === key);
+  if (index < 0) await append(STATE_TAB, [key, value]);
+  else await updateRow(STATE_TAB, index, [key, value]);
+}
+async function getChannel(client) {
+  const channel = await client.channels.fetch(CHANNEL_ID);
+  if (!channel?.isTextBased() || !channel.messages?.fetch) throw new Error("投稿頻道不可讀取，請確認 Bot 權限與頻道 ID");
+  return channel;
+}
+async function scan(client) {
+  const channel = await getChannel(client);
+  const old = await read(SUBMISSIONS_TAB);
+  const seen = new Set(old.map(r => r[0]));
+  let before;
+  let count = 0;
+  let examined = 0;
+  for (let page = 0; page < 200; page++) {
+    const messages = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+    if (!messages.size) break;
+    examined += messages.size;
+    for (const msg of messages.values()) {
+      if (msg.createdTimestamp < START_MS || msg.createdTimestamp > END_MS || msg.author.bot) continue;
+      const photo = msg.attachments.find(imageAttachment);
+      if (!photo || seen.has(msg.id)) continue;
+      await append(SUBMISSIONS_TAB, [msg.id, msg.author.id, msg.author.username, photo.url,
+        msg.url, new Date(msg.createdTimestamp).toISOString(), "待審核"]);
+      seen.add(msg.id);
+      count++;
+    }
+    const last = messages.last();
+    if (!last || last.createdTimestamp < START_MS) break;
+    before = last.id;
+  }
+  return { count, examined };
+}
+function candidateRow(r) {
+  return { id: r[0], authorId: r[1], author: r[2], image: r[3], url: r[4], date: r[5], status: r[6] };
+}
+function reviewEmbed(c, index, total) {
+  const embed = new EmbedBuilder().setColor(0xF59E0B)
+    .setTitle(`🎃 參賽作品審核 ${index + 1}/${total}`)
+    .setDescription(`作者：<@${c.authorId}>\n狀態：**${c.status}**\n[查看原始投稿](${c.url})\n作品 ID：\`${c.id}\``);
+  if (c.image?.startsWith("https://")) embed.setImage(c.image);
+  return embed;
+}
+function reviewButtons() {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("costume:approve").setLabel("核准").setEmoji("✅").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("costume:reject").setLabel("排除").setEmoji("❌").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("costume:next").setLabel("下一件").setStyle(ButtonStyle.Secondary)
+  )];
+}
+const reviewSessions = new Map();
+function votePanel() {
+  return {
+    embeds: [new EmbedBuilder().setColor(0x9B59B6).setTitle("🎃 EtheReal 萬聖節變裝大賽｜正式投票")
+      .setDescription("每位會員 **一票**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n⏰ **2026/10/30 23:59（台灣時間）截止**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("costume:vote:0").setLabel("🗳️ 我要投票／改票").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("costume:mine").setLabel("查看我的選票").setStyle(ButtonStyle.Secondary)
+    )]
+  };
+}
+function selectPage(candidates, page) {
+  const totalPages = Math.max(1, Math.ceil(candidates.length / 25));
+  const p = Math.max(0, Math.min(page, totalPages - 1));
+  const slice = candidates.slice(p * 25, (p + 1) * 25);
+  const menu = new StringSelectMenuBuilder().setCustomId("costume:select")
+    .setPlaceholder(`選擇參賽作品（第 ${p + 1}/${totalPages} 頁）`)
+    .addOptions(slice.map((c, i) => ({ label: `${p * 25 + i + 1}. ${c.author}`.slice(0, 100),
+      description: `作品 ${c.id}`.slice(0, 100), value: c.id })));
+  const components = [new ActionRowBuilder().addComponents(menu)];
+  if (totalPages > 1) components.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`costume:vote:${p - 1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder().setCustomId(`costume:vote:${p + 1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)
+  ));
+  return components;
+}
+async function publish(client) {
+  const state = await stateGet();
+  if (state.published === "yes" || Date.now() < DEADLINE_MS || (state.open !== "yes" && state.publishing !== "yes")) return false;
+  // 先標記鎖定，防止重啟重複發文；若發送失敗會留下待處理狀態。
+  await stateSet("open", "no");
+  if (state.publishing === "yes") return false;
+  await stateSet("publishing", "yes");
+  const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准");
+  const validIds = new Set(candidates.map(c => c.id));
+  const votes = await read(VOTES_TAB);
+  const latest = new Map();
+  for (const row of votes) if (row[0]) latest.set(row[0], row[1]);
+  const counts = new Map(candidates.map(c => [c.id, 0]));
+  for (const id of latest.values()) if (validIds.has(id)) counts.set(id, counts.get(id) + 1);
+  const ordered = candidates.sort((a, b) => counts.get(b.id) - counts.get(a.id) || a.id.localeCompare(b.id));
+  let rank = 0, lastCount = null;
+  const lines = ordered.map((c, i) => {
+    const n = counts.get(c.id);
+    if (n !== lastCount) rank = i + 1;
+    lastCount = n;
+    return `${rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : "🎭"} **第 ${rank} 名**｜<@${c.authorId}>：**${n} 票**｜[作品](${c.url})`;
+  });
+  const channel = await getChannel(client);
+  const text = `🏆 **EtheReal 萬聖節變裝大賽｜投票結果**\n\n${lines.join("\n") || "本次沒有核准作品。"}\n\n有效投票人數：${[...latest.values()].filter(id => validIds.has(id)).length} 人\n截止時間：2026/10/30 23:59（台灣時間）`;
+  // 分段避免 Discord 2000 字限制
+  for (let i = 0; i < text.length; i += 1900) await channel.send({ content: text.slice(i, i + 1900), allowedMentions: { parse: [] } });
+  await stateSet("published", "yes");
+  return true;
+}
+
+function setupCostumeVoting(client) {
+  client.on("messageCreate", async message => {
+    if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+    if (!message.guild || !isAdmin(message.member)) return;
+    const command = message.content.trim().slice(PREFIX.length).trim();
+    if (!["掃描", "審核", "開放", "狀態", "公布"].includes(command)) return;
+    try {
+      if (command === "掃描") {
+        await message.reply("🔎 正在掃描 10/18～10/29 的圖片投稿，請稍候……");
+        const result = await locked(() => scan(client));
+        return message.channel.send(`✅ 掃描完成，新增 **${result.count}** 件作品（檢查 ${result.examined} 則訊息）。請輸入 \`-變裝審核\`。`);
+      }
+      if (command === "審核") {
+        const rows = await locked(() => read(SUBMISSIONS_TAB));
+        const items = rows.map(candidateRow);
+        if (!items.length) return message.reply("目前沒有作品，請先執行 `-變裝掃描`。");
+        reviewSessions.set(message.author.id, { items, index: 0 });
+        return message.reply({ embeds: [reviewEmbed(items[0], 0, items.length)], components: reviewButtons() });
+      }
+      if (command === "狀態") {
+        const [rows, state, votes] = await locked(async () => Promise.all([read(SUBMISSIONS_TAB), stateGet(), read(VOTES_TAB)]));
+        return message.reply(`🎃 作品 ${rows.length} 件｜核准 ${rows.filter(r => r[6] === "已核准").length} 件｜待審 ${rows.filter(r => r[6] === "待審核").length} 件\n投票：${state.open === "yes" ? "已開放" : "未開放／已截止"}｜已投票 ${votes.filter(r => r[0]).length} 人｜已公布：${state.published === "yes" ? "是" : "否"}`);
+      }
+      if (command === "開放") {
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (Date.now() >= DEADLINE_MS) return "❌ 已超過投票截止時間。";
+          if (state.open === "yes") return "⚠️ 投票已開放，請勿重複發佈。";
+          if (state.published === "yes") return "❌ 結果已公布。";
+          const rows = await read(SUBMISSIONS_TAB);
+          if (!rows.some(r => r[6] === "已核准")) return "❌ 尚未核准任何作品。";
+          const channel = await getChannel(client);
+          const panel = await channel.send(votePanel());
+          await stateSet("panelId", panel.id);
+          await stateSet("open", "yes");
+          return `✅ 已在 <#${CHANNEL_ID}> 開放投票！`;
+        });
+        return message.reply(result);
+      }
+      if (command === "公布") {
+        if (Date.now() < DEADLINE_MS) return message.reply("⏳ 尚未截止，不能提前公布結果。");
+        const done = await locked(() => publish(client));
+        return message.reply(done ? "🏆 已公布結果。" : "⚠️ 已公布或正在公布；若未看到公告請檢查主機紀錄。");
+      }
+    } catch (err) { console.error("[變裝指令]", err); return message.reply("❌ 操作失敗，請查看主機 Logs（確認 Google Sheets 與 Discord 權限）。").catch(() => {}); }
+  });
+
+  client.on("interactionCreate", async interaction => {
+    if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+    if (!interaction.customId.startsWith("costume:")) return;
+    try {
+      if (["costume:approve", "costume:reject", "costume:next"].includes(interaction.customId)) {
+        if (!isAdmin(interaction.member)) return interaction.reply({ content: "❌ 只有管理員可以審核。", ephemeral: true });
+        const session = reviewSessions.get(interaction.user.id);
+        if (!session) return interaction.reply({ content: "審核已失效，請重新輸入 `-變裝審核`。", ephemeral: true });
+        await interaction.deferUpdate();
+        if (interaction.customId !== "costume:next") {
+          const changed = await locked(async () => {
+            const state = await stateGet();
+            if (state.open === "yes") return false;
+            const rows = await read(SUBMISSIONS_TAB);
+            const current = session.items[session.index];
+            const index = rows.findIndex(r => r[0] === current.id);
+            if (index >= 0) {
+              rows[index][6] = interaction.customId === "costume:approve" ? "已核准" : "已排除";
+              await updateRow(SUBMISSIONS_TAB, index, rows[index]);
+              current.status = rows[index][6];
+            }
+            return true;
+          });
+          if (!changed) return interaction.editReply({ content: "⚠️ 投票已開放，不能再變更參賽名單。", embeds: [], components: [] });
+        }
+        session.index++;
+        if (session.index >= session.items.length) {
+          reviewSessions.delete(interaction.user.id);
+          return interaction.editReply({ content: "✅ 已瀏覽完所有作品。可輸入 `-變裝審核` 再次檢查。", embeds: [], components: [] });
+        }
+        return interaction.editReply({ embeds: [reviewEmbed(session.items[session.index], session.index, session.items.length)], components: reviewButtons() });
+      }
+      if (interaction.customId === "costume:mine") {
+        await interaction.deferReply({ ephemeral: true });
+        const text = await locked(async () => {
+          const vote = (await read(VOTES_TAB)).find(r => r[0] === interaction.user.id);
+          if (!vote) return "你目前還沒有投票。";
+          const c = (await read(SUBMISSIONS_TAB)).map(candidateRow).find(c => c.id === vote[1]);
+          return c ? `🗳️ 你目前投給 **${c.author}** 的作品：${c.url}` : "你的原選票對應作品已不存在，請聯絡管理員。";
+        });
+        return interaction.editReply(text);
+      }
+      if (interaction.customId.startsWith("costume:vote:")) {
+        await interaction.deferReply({ ephemeral: true });
+        const data = await locked(async () => ({ state: await stateGet(), candidates: (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准") }));
+        if (!isOpen(data.state)) return interaction.editReply("❌ 目前尚未開放投票，或投票已截止。");
+        if (!data.candidates.length) return interaction.editReply("目前沒有可投票作品。");
+        const page = Number(interaction.customId.split(":")[2]) || 0;
+        return interaction.editReply({ content: "🎃 請選擇你喜歡的作品（不可投給自己）；可重選改票。", components: selectPage(data.candidates, page) });
+      }
+      if (interaction.customId === "costume:select") {
+        await interaction.deferReply({ ephemeral: true });
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (!isOpen(state)) return "❌ 投票已截止或尚未開放。";
+          const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow);
+          const candidate = candidates.find(c => c.id === interaction.values[0] && c.status === "已核准");
+          if (!candidate) return "❌ 作品已被移除，請重新選擇。";
+          if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品，請選其他參賽者。";
+          const rows = await read(VOTES_TAB);
+          const index = rows.findIndex(r => r[0] === interaction.user.id);
+          const values = [interaction.user.id, candidate.id, nowTaipei()];
+          if (index < 0) await append(VOTES_TAB, values);
+          else await updateRow(VOTES_TAB, index, values);
+          return `✅ ${index < 0 ? "投票成功" : "改票成功"}！你投給 **${candidate.author}** 的作品。\n${candidate.url}`;
+        });
+        return interaction.editReply({ content: result, components: [] });
+      }
+    } catch (err) {
+      console.error("[變裝互動]", err);
+      const payload = { content: "❌ 操作失敗，請稍後重試或通知管理員。", components: [] };
+      if (interaction.deferred || interaction.replied) await interaction.editReply(payload).catch(() => {});
+      else await interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+    }
+  });
+
+  client.once("ready", () => {
+    console.log("🎃 變裝比賽系統已載入");
+    const check = async () => {
+      if (tickBusy || Date.now() < DEADLINE_MS) return;
+      tickBusy = true;
+      try { await locked(() => publish(client)); }
+      catch (err) { console.error("[變裝自動公布]", err); }
+      finally { tickBusy = false; }
+    };
+    check();
+    const timer = setInterval(check, 30000);
+    timer.unref?.();
+  });
+}
+
+module.exports = { setupCostumeVoting };
