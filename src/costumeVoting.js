@@ -146,17 +146,23 @@ async function withGuildNames(client, candidates) {
   }));
   return candidates.map(c => ({ ...c, author: names.get(c.authorId) || c.author }));
 }
-function previewPanel(candidate, testing) {
+function previewPanel(candidate, testing, index, total) {
   const embed = new EmbedBuilder().setColor(testing ? 0x3498DB : 0x9B59B6)
-    .setTitle(testing ? "🧪 測試｜確認參賽作品" : "🎃 確認參賽作品")
-    .setDescription(`**參賽者：${candidate.author}**\n[查看原始投稿](${candidate.url})\n\n請先確認圖片，再按「確認投票」。選擇作品不會直接投票。`);
+    .setTitle(testing ? "🧪 測試｜瀏覽參賽作品" : "🎃 瀏覽參賽作品")
+    .setDescription(`**第 ${index + 1} / ${total} 件**\n**參賽者：${candidate.author}**\n[查看原始投稿](${candidate.url})\n\n按左右箭頭切換作品；只有按「確認投票」才會記錄選票。`);
   if (candidate.image?.startsWith("https://")) embed.setImage(candidate.image);
   const tag = testing ? "testconfirm" : "confirm";
-  const back = testing ? "testvote" : "vote";
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`costume:${tag}:${candidate.id}`).setLabel("確認投票").setEmoji("✅").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`costume:${back}:0`).setLabel("返回選擇").setEmoji("↩️").setStyle(ButtonStyle.Secondary)
-  )] };
+  const mode = testing ? "test" : "real";
+  return { embeds: [embed], components: [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${Math.max(0, index - 1)}`).setLabel("上一件").setEmoji("⬅️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
+      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${Math.min(total - 1, index + 1)}`).setLabel("下一件").setEmoji("➡️").setStyle(ButtonStyle.Secondary).setDisabled(index >= total - 1)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`costume:${tag}:${candidate.id}`).setLabel("確認投票").setEmoji("✅").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`costume:list:${mode}`).setLabel("作品清單").setEmoji("📋").setStyle(ButtonStyle.Secondary)
+    )
+  ] };
 }
 function reviewEmbed(c, index, total) {
   const embed = new EmbedBuilder().setColor(0xF59E0B)
@@ -398,6 +404,25 @@ function setupCostumeVoting(client) {
         const page = Number(interaction.customId.split(":")[2]) || 0;
         return interaction.editReply({ content: testing ? "🧪 測試投票（不計入正式票數），選擇後會先預覽圖片。" : "🎃 選擇作品後可預覽圖片，確認後才會投票。", embeds: [], components: selectPage(data.candidates, page, testing) });
       }
+      if (interaction.customId.startsWith("costume:browse:") || interaction.customId.startsWith("costume:list:")) {
+        const parts = interaction.customId.split(":");
+        const testing = parts[2] === "test";
+        await interaction.deferUpdate();
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
+            return { error: "❌ 投票尚未開放或已結束。" };
+          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+          if (!candidates.length) return { error: "目前沒有已核准作品。" };
+          if (parts[1] === "list") return { list: true, candidates };
+          const index = Number(parts[3]);
+          if (!Number.isSafeInteger(index) || index < 0 || index >= candidates.length) return { error: "作品編號無效，請重新開啟投票。" };
+          return { candidates, index };
+        });
+        if (result.error) return interaction.editReply({ content: result.error, embeds: [], components: [] });
+        if (result.list) return interaction.editReply({ content: "📋 選擇作品後會先顯示圖片預覽。", embeds: [], components: selectPage(result.candidates, 0, testing) });
+        return interaction.editReply({ content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length) });
+      }
       if (interaction.customId === "costume:select" || interaction.customId === "costume:testselect") {
         const testing = interaction.customId === "costume:testselect";
         await interaction.deferReply({ ephemeral: true });
@@ -409,9 +434,10 @@ function setupCostumeVoting(client) {
           const candidate = candidates.find(c => c.id === interaction.values[0] && c.status === "已核准");
           if (!candidate) return { error: "❌ 作品已被移除，請重新選擇。" };
           if (candidate.authorId === interaction.user.id) return { error: "❌ 不能投票給自己的作品，請選其他參賽者。" };
-          return { candidate };
+          const approved = candidates.filter(c => c.status === "已核准");
+          return { candidate, index: approved.findIndex(c => c.id === candidate.id), total: approved.length };
         });
-        return interaction.editReply(result.error ? { content: result.error } : { content: "", ...previewPanel(result.candidate, testing) });
+        return interaction.editReply(result.error ? { content: result.error, embeds: [], components: [] } : { content: "", ...previewPanel(result.candidate, testing, result.index, result.total) });
       }
       if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
         const testing = interaction.customId.startsWith("costume:testconfirm:");
