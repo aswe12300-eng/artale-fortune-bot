@@ -30,6 +30,10 @@ const {
   setupRpsGame
 } = require("./src/rpsGame");
 
+const {
+  setupCostumeVoting
+} = require("./src/costumeVoting");
+
 if (!client || typeof client.on !== "function") {
   console.error("❌ Discord client 載入失敗");
   console.error(
@@ -46,6 +50,7 @@ setupRaidSignup(client);
 setupRaidManager(client);
 setupRaidTeamBuilder(client);
 setupRpsGame(client);
+setupCostumeVoting(client);
 
 client.login(process.env.DISCORD_TOKEN).catch(error => {
   console.error("Discord 登入失敗：", error);
