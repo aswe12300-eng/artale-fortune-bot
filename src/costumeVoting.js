@@ -19,8 +19,8 @@ const DEADLINE_MS = Date.parse("2026-10-31T16:00:00Z"); // 11/01 00:00 台灣，
 const PREFIX = "-變裝";
 const HEADERS = {
   [SUBMISSIONS_TAB]: ["作品訊息ID", "作者Discord ID", "作者名稱", "作品圖片URL", "作品訊息連結", "投稿時間", "審核狀態"],
-  [VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間"],
-  [TEST_VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間"],
+  [VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間", "票次"],
+  [TEST_VOTES_TAB]: ["投票者Discord ID", "作品訊息ID", "最後投票時間", "票次"],
   [STATE_TAB]: ["設定", "值"]
 };
 
@@ -70,7 +70,13 @@ async function initialize() {
           valueInputOption: "RAW", requestBody: { values: [headers] } });
       }
     }
-  })().catch(err => { initPromise = undefined; throw err; });
+     // 舊版選票分頁可能只有 A～C 欄，補上 D 欄標題而不動既有選票。
+     for (const tab of [VOTES_TAB, TEST_VOTES_TAB]) {
+       await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID,
+         range: sheetRange(tab, "D1"), valueInputOption: "RAW",
+         requestBody: { values: [["票次"]] } });
+     }
+   })().catch(err => { initPromise = undefined; throw err; });
   return initPromise;
 }
 async function read(tab) {
@@ -129,6 +135,57 @@ async function scan(client) {
   }
   return { count, examined };
 }
+// 舊版每人一列的選票視為第一票；新版 D 欄記錄票次（1 / 2）。
+function voteSlot(row) { return row[3] === "2" ? 2 : 1; }
+function userBallots(rows, userId) {
+  const result = new Map();
+  rows.forEach((row, index) => {
+    if (row[0] === userId) result.set(voteSlot(row), { row, index });
+  });
+  return result;
+}
+function voteCount(rows, candidates) {
+  const allowed = new Map(candidates.map(c => [c.id, c]));
+  const byUser = new Map();
+  rows.forEach(row => {
+    if (!row[0] || !row[1]) return;
+    if (!byUser.has(row[0])) byUser.set(row[0], new Map());
+    byUser.get(row[0]).set(voteSlot(row), row[1]);
+  });
+  const counts = new Map(candidates.map(c => [c.id, 0]));
+  let voters = 0, validVotes = 0;
+  for (const [userId, slots] of byUser) {
+    const used = new Set();
+    let any = false;
+    for (const slot of [1, 2]) {
+      const id = slots.get(slot), candidate = allowed.get(id);
+      if (!candidate || candidate.authorId === userId || used.has(id)) continue;
+      used.add(id);
+      counts.set(id, counts.get(id) + 1);
+      validVotes++;
+      any = true;
+    }
+    if (any) voters++;
+  }
+  return { counts, voters, validVotes };
+}
+function slotPicker(testing) {
+  const mode = testing ? "test" : "real";
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`costume:slot:${mode}:1`).setLabel("第一票／改票").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`costume:slot:${mode}:2`).setLabel("第二票／改票").setStyle(ButtonStyle.Primary)
+  );
+}
+function ballotSummary(rows, userId, candidates) {
+  const slots = userBallots(rows, userId);
+  const display = slot => {
+    const id = slots.get(slot)?.row[1];
+    const c = candidates.find(x => x.id === id);
+    return c ? `**${c.author}**｜${c.url}` : "尚未投票";
+  };
+  return `🗳️ 你的選票（最多兩票，不可投相同作品）\n第一票：${display(1)}\n第二票：${display(2)}`;
+}
+
 function candidateRow(r) {
   return { id: r[0], authorId: r[1], author: r[2], image: r[3], url: r[4], date: r[5], status: r[6] };
 }
@@ -146,21 +203,21 @@ async function withGuildNames(client, candidates) {
   }));
   return candidates.map(c => ({ ...c, author: names.get(c.authorId) || c.author }));
 }
-function previewPanel(candidate, testing, index, total) {
+function previewPanel(candidate, testing, index, total, slot) {
   const embed = new EmbedBuilder().setColor(testing ? 0x3498DB : 0x9B59B6)
     .setTitle(testing ? "🧪 測試｜瀏覽參賽作品" : "🎃 瀏覽參賽作品")
-    .setDescription(`**第 ${index + 1} / ${total} 件**\n**參賽者：${candidate.author}**\n[查看原始投稿](${candidate.url})\n\n按左右箭頭切換作品；只有按「確認投票」才會記錄選票。`);
+    .setDescription(`**第 ${index + 1} / ${total} 件**｜**第 ${slot} 票**\n**參賽者：${candidate.author}**\n[查看原始投稿](${candidate.url})\n\n按左右箭頭切換作品；只有按「確認投票」才會記錄選票。`);
   if (candidate.image?.startsWith("https://")) embed.setImage(candidate.image);
   const tag = testing ? "testconfirm" : "confirm";
   const mode = testing ? "test" : "real";
   return { embeds: [embed], components: [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${Math.max(0, index - 1)}`).setLabel("上一件").setEmoji("⬅️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
-      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${Math.min(total - 1, index + 1)}`).setLabel("下一件").setEmoji("➡️").setStyle(ButtonStyle.Secondary).setDisabled(index >= total - 1)
+      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${slot}:${Math.max(0, index - 1)}`).setLabel("上一件").setEmoji("⬅️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
+      new ButtonBuilder().setCustomId(`costume:browse:${mode}:${slot}:${Math.min(total - 1, index + 1)}`).setLabel("下一件").setEmoji("➡️").setStyle(ButtonStyle.Secondary).setDisabled(index >= total - 1)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`costume:${tag}:${candidate.id}`).setLabel("確認投票").setEmoji("✅").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`costume:list:${mode}`).setLabel("作品清單").setEmoji("📋").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`costume:${tag}:${slot}:${candidate.id}`).setLabel("確認投票").setEmoji("✅").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`costume:list:${mode}:${slot}`).setLabel("作品清單").setEmoji("📋").setStyle(ButtonStyle.Secondary)
     )
   ] };
 }
@@ -182,7 +239,7 @@ const reviewSessions = new Map();
 function votePanel() {
   return {
     embeds: [new EmbedBuilder().setColor(0x9B59B6).setTitle("🎃 EtheReal 萬聖節變裝大賽｜正式投票")
-      .setDescription("每位會員 **一票**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n🕒 **2026/10/30 11:59 開始投票**\n⏰ **2026/10/31 23:59 截止（台灣時間）**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
+      .setDescription("每位會員 **兩票**，必須投給**不同作品**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n🕒 **2026/10/30 11:59 開始投票**\n⏰ **2026/10/31 23:59 截止（台灣時間）**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("costume:vote:0").setLabel("🗳️ 我要投票／改票").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("costume:mine").setLabel("查看我的選票").setStyle(ButtonStyle.Secondary)
@@ -193,25 +250,25 @@ function testPanel() {
   return {
     embeds: [new EmbedBuilder().setColor(0x3498DB)
       .setTitle("🧪 EtheReal 變裝比賽｜測試投票（非正式）")
-      .setDescription("這是測試模式，選票**不會計入正式比賽**。\n每人一票、禁止投自己、可改票。管理員可隨時結束測試。")],
+      .setDescription("這是測試模式，選票**不會計入正式比賽**。\n每人最多兩票、兩票不可重複、禁止投自己、可改票。管理員可隨時結束測試。")],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("costume:testvote:0").setLabel("🧪 測試投票／改票").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("costume:testmine").setLabel("查看測試選票").setStyle(ButtonStyle.Secondary)
     )]
   };
 }
-function selectPage(candidates, page, testing = false) {
+function selectPage(candidates, page, testing = false, slot = 1) {
   const totalPages = Math.max(1, Math.ceil(candidates.length / 25));
   const p = Math.max(0, Math.min(page, totalPages - 1));
   const slice = candidates.slice(p * 25, (p + 1) * 25);
-  const menu = new StringSelectMenuBuilder().setCustomId(testing ? "costume:testselect" : "costume:select")
+  const menu = new StringSelectMenuBuilder().setCustomId(`costume:select:${testing ? "test" : "real"}:${slot}`)
     .setPlaceholder(`選擇參賽作品（第 ${p + 1}/${totalPages} 頁）`)
     .addOptions(slice.map((c, i) => ({ label: `${p * 25 + i + 1}. ${c.author}`.slice(0, 100),
       description: `作品 ${c.id}`.slice(0, 100), value: c.id })));
   const components = [new ActionRowBuilder().addComponents(menu)];
   if (totalPages > 1) components.push(new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${testing ? "costume:testvote" : "costume:vote"}:${p - 1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
-    new ButtonBuilder().setCustomId(`${testing ? "costume:testvote" : "costume:vote"}:${p + 1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)
+    new ButtonBuilder().setCustomId(`costume:page:${testing ? "test" : "real"}:${slot}:${p - 1}`).setLabel("上一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder().setCustomId(`costume:page:${testing ? "test" : "real"}:${slot}:${p + 1}`).setLabel("下一頁").setStyle(ButtonStyle.Secondary).setDisabled(p === totalPages - 1)
   ));
   return components;
 }
@@ -224,11 +281,8 @@ async function publish(client) {
   await stateSet("publishing", "yes");
   const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
   const validIds = new Set(candidates.map(c => c.id));
-  const votes = await read(VOTES_TAB);
-  const latest = new Map();
-  for (const row of votes) if (row[0]) latest.set(row[0], row[1]);
-  const counts = new Map(candidates.map(c => [c.id, 0]));
-  for (const id of latest.values()) if (validIds.has(id)) counts.set(id, counts.get(id) + 1);
+   const votes = await read(VOTES_TAB);
+   const { counts, voters, validVotes } = voteCount(votes, candidates);
   const ordered = candidates.sort((a, b) => counts.get(b.id) - counts.get(a.id) || a.id.localeCompare(b.id));
   let rank = 0, lastCount = null;
   const lines = ordered.map((c, i) => {
@@ -238,7 +292,7 @@ async function publish(client) {
     return `${rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : "🎭"} **第 ${rank} 名**｜<@${c.authorId}>：**${n} 票**｜[作品](${c.url})`;
   });
   const channel = await getChannel(client);
-  const text = `🏆 **EtheReal 萬聖節變裝大賽｜投票結果**\n\n${lines.join("\n") || "本次沒有核准作品。"}\n\n有效投票人數：${[...latest.values()].filter(id => validIds.has(id)).length} 人\n截止時間：2026/10/31 23:59（台灣時間）`;
+  const text = `🏆 **EtheReal 萬聖節變裝大賽｜投票結果**\n\n${lines.join("\n") || "本次沒有核准作品。"}\n\n有效投票人數：${voters} 人｜有效票數：${validVotes} 票\n截止時間：2026/10/31 23:59（台灣時間）`;
   // 分段避免 Discord 2000 字限制
   for (let i = 0; i < text.length; i += 1900) await channel.send({ content: text.slice(i, i + 1900), allowedMentions: { parse: [] } });
   await stateSet("published", "yes");
@@ -283,7 +337,7 @@ function setupCostumeVoting(client) {
       }
       if (command === "狀態") {
         const [rows, state, votes] = await locked(async () => Promise.all([read(SUBMISSIONS_TAB), stateGet(), read(VOTES_TAB)]));
-        return message.reply(`🎃 作品 ${rows.length} 件｜核准 ${rows.filter(r => r[6] === "已核准").length} 件｜待審 ${rows.filter(r => r[6] === "待審核").length} 件\n投票：${state.open === "yes" ? "已開放" : "未開放／已截止"}｜已投票 ${votes.filter(r => r[0]).length} 人｜已公布：${state.published === "yes" ? "是" : "否"}\n🧪 測試模式：${state.testOpen === "yes" ? "進行中" : "未開啟"}`);
+        return message.reply(`🎃 作品 ${rows.length} 件｜核准 ${rows.filter(r => r[6] === "已核准").length} 件｜待審 ${rows.filter(r => r[6] === "待審核").length} 件\n投票：${state.open === "yes" ? "已開放" : "未開放／已截止"}｜已投票 ${new Set(votes.filter(r => r[0]).map(r => r[0])).size} 人／${voteCount(votes, rows.map(candidateRow).filter(c => c.status === "已核准")).validVotes} 票｜已公布：${state.published === "yes" ? "是" : "否"}\n🧪 測試模式：${state.testOpen === "yes" ? "進行中" : "未開啟"}`);
       }
       if (command === "測試") {
         const result = await locked(async () => {
@@ -296,7 +350,7 @@ function setupCostumeVoting(client) {
           if (!candidates.length) return "❌ 尚無已核准的參賽作品。";
           // 清除前次測試資料，避免新一輪測試沿用舊票。
           await initialize();
-          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:C") });
+          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:D") });
           const panel = await message.channel.send(testPanel());
           await stateSet("testPanelId", panel.id);
           await stateSet("testChannelId", message.channel.id);
@@ -310,7 +364,7 @@ function setupCostumeVoting(client) {
           const state = await stateGet();
           await stateSet("testOpen", "no");
           await initialize();
-          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:C") });
+          await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: sheetRange(TEST_VOTES_TAB, "A2:D") });
           if (state.testPanelId && state.testChannelId) {
             try {
               const ch = await client.channels.fetch(state.testChannelId);
@@ -383,84 +437,95 @@ function setupCostumeVoting(client) {
         return interaction.editReply({ embeds: [reviewEmbed(session.items[session.index], session.index, session.items.length)], components: reviewButtons() });
       }
       if (interaction.customId === "costume:mine" || interaction.customId === "costume:testmine") {
-        const testing = interaction.customId === "costume:testmine";
-        await interaction.deferReply({ ephemeral: true });
-        const text = await locked(async () => {
-          if (testing && (await stateGet()).testOpen !== "yes") return "🧪 測試模式已結束。";
-          const vote = (await read(testing ? TEST_VOTES_TAB : VOTES_TAB)).find(r => r[0] === interaction.user.id);
-          if (!vote) return "你目前還沒有投票。";
-          const c = (await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow))).find(c => c.id === vote[1]);
-          return c ? `🗳️ 你目前投給 **${c.author}** 的作品：${c.url}` : "你的原選票對應作品已不存在，請聯絡管理員。";
-        });
-        return interaction.editReply(text);
-      }
-      if (interaction.customId.startsWith("costume:vote:") || interaction.customId.startsWith("costume:testvote:")) {
-        const testing = interaction.customId.startsWith("costume:testvote:");
-        await interaction.deferReply({ ephemeral: true });
-        const data = await locked(async () => ({ state: await stateGet(), candidates: await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准")) }));
-        if (testing ? data.state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(data.state))
-          return interaction.editReply("❌ 目前尚未開放投票，或投票已截止。");
-        if (!data.candidates.length) return interaction.editReply("目前沒有可投票作品。");
-        const page = Number(interaction.customId.split(":")[2]) || 0;
-        return interaction.editReply({ content: testing ? "🧪 測試投票（不計入正式票數），選擇後會先預覽圖片。" : "🎃 選擇作品後可預覽圖片，確認後才會投票。", embeds: [], components: selectPage(data.candidates, page, testing) });
-      }
-      if (interaction.customId.startsWith("costume:browse:") || interaction.customId.startsWith("costume:list:")) {
-        const parts = interaction.customId.split(":");
-        const testing = parts[2] === "test";
-        await interaction.deferUpdate();
-        const result = await locked(async () => {
-          const state = await stateGet();
-          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
-            return { error: "❌ 投票尚未開放或已結束。" };
-          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
-          if (!candidates.length) return { error: "目前沒有已核准作品。" };
-          if (parts[1] === "list") return { list: true, candidates };
-          const index = Number(parts[3]);
-          if (!Number.isSafeInteger(index) || index < 0 || index >= candidates.length) return { error: "作品編號無效，請重新開啟投票。" };
-          return { candidates, index };
-        });
-        if (result.error) return interaction.editReply({ content: result.error, embeds: [], components: [] });
-        if (result.list) return interaction.editReply({ content: "📋 選擇作品後會先顯示圖片預覽。", embeds: [], components: selectPage(result.candidates, 0, testing) });
-        return interaction.editReply({ content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length) });
-      }
-      if (interaction.customId === "costume:select" || interaction.customId === "costume:testselect") {
-        const testing = interaction.customId === "costume:testselect";
-        await interaction.deferReply({ ephemeral: true });
-        const result = await locked(async () => {
-          const state = await stateGet();
-          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
-            return { error: "❌ 投票已截止或尚未開放。" };
-          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
-          const candidate = candidates.find(c => c.id === interaction.values[0] && c.status === "已核准");
-          if (!candidate) return { error: "❌ 作品已被移除，請重新選擇。" };
-          if (candidate.authorId === interaction.user.id) return { error: "❌ 不能投票給自己的作品，請選其他參賽者。" };
-          const approved = candidates.filter(c => c.status === "已核准");
-          return { candidate, index: approved.findIndex(c => c.id === candidate.id), total: approved.length };
-        });
-        return interaction.editReply(result.error ? { content: result.error, embeds: [], components: [] } : { content: "", ...previewPanel(result.candidate, testing, result.index, result.total) });
-      }
-      if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
-        const testing = interaction.customId.startsWith("costume:testconfirm:");
-        const candidateId = interaction.customId.split(":")[2];
-        await interaction.deferReply({ ephemeral: true });
-        const result = await locked(async () => {
-          const state = await stateGet();
-          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
-            return "❌ 投票已截止或尚未開放。";
-          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
-          const candidate = candidates.find(c => c.id === candidateId && c.status === "已核准");
-          if (!candidate) return "❌ 作品已被移除，請重新選擇。";
-          if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品。";
-          const tab = testing ? TEST_VOTES_TAB : VOTES_TAB;
-          const rows = await read(tab);
-          const index = rows.findIndex(r => r[0] === interaction.user.id);
-          const values = [interaction.user.id, candidate.id, nowTaipei()];
-          if (index < 0) await append(tab, values);
-          else await updateRow(tab, index, values);
-          return `✅ ${testing ? "【測試】" : ""}${index < 0 ? "投票成功" : "改票成功"}！你投給 **${candidate.author}** 的作品。\n${candidate.url}`;
-        });
-        return interaction.editReply({ content: result, embeds: [], components: [] });
-      }
+         const testing = interaction.customId === "costume:testmine";
+         await interaction.deferReply({ ephemeral: true });
+         const result = await locked(async () => {
+           if (testing && (await stateGet()).testOpen !== "yes") return "🧪 測試模式已結束。";
+           const rows = await read(testing ? TEST_VOTES_TAB : VOTES_TAB);
+           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
+           return ballotSummary(rows, interaction.user.id, candidates);
+         });
+         return interaction.editReply(result);
+       }
+       if (interaction.customId.startsWith("costume:vote:") || interaction.customId.startsWith("costume:testvote:")) {
+         const testing = interaction.customId.startsWith("costume:testvote:");
+         await interaction.deferReply({ ephemeral: true });
+         const state = await locked(() => stateGet());
+         if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
+           return interaction.editReply("❌ 投票未開放或已截止。");
+         return interaction.editReply({ content: "請先選擇要投哪一票（可修改）。", embeds: [], components: [slotPicker(testing)] });
+       }
+       if (interaction.customId.startsWith("costume:slot:") || interaction.customId.startsWith("costume:page:")) {
+         const parts = interaction.customId.split(":");
+         const testing = parts[2] === "test", slot = Number(parts[3]);
+         const page = parts[1] === "page" ? Number(parts[4]) : 0;
+         await interaction.deferReply({ ephemeral: true });
+         const data = await locked(async () => ({ state: await stateGet(), candidates: await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准")) }));
+         if (testing ? data.state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(data.state))
+           return interaction.editReply("❌ 投票未開放或已截止。");
+         if (![1, 2].includes(slot) || !Number.isSafeInteger(page) || page < 0) return interaction.editReply("票次或頁碼無效。");
+         if (!data.candidates.length) return interaction.editReply("沒有可投票作品。");
+         return interaction.editReply({ content: `🎃 第 ${slot} 票：請選擇作品，會先顯示圖片。`, embeds: [], components: selectPage(data.candidates, page, testing, slot) });
+       }
+       if (interaction.customId.startsWith("costume:browse:") || interaction.customId.startsWith("costume:list:")) {
+         const parts = interaction.customId.split(":");
+         const testing = parts[2] === "test", slot = Number(parts[3]);
+         await interaction.deferUpdate();
+         const result = await locked(async () => {
+           const state = await stateGet();
+           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已結束。" };
+           if (![1, 2].includes(slot)) return { error: "票次無效。" };
+           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           if (!candidates.length) return { error: "沒有已核准作品。" };
+           if (parts[1] === "list") return { list: true, candidates };
+           const index = Number(parts[4]);
+           if (!Number.isSafeInteger(index) || index < 0 || index >= candidates.length) return { error: "作品編號無效。" };
+           return { candidates, index };
+         });
+         if (result.error) return interaction.editReply({ content: result.error, embeds: [], components: [] });
+         if (result.list) return interaction.editReply({ content: `📋 第 ${slot} 票：選擇作品。`, embeds: [], components: selectPage(result.candidates, 0, testing, slot) });
+         return interaction.editReply({ content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot) });
+       }
+       if (interaction.customId.startsWith("costume:select:")) {
+         const parts = interaction.customId.split(":");
+         const testing = parts[2] === "test", slot = Number(parts[3]);
+         await interaction.deferReply({ ephemeral: true });
+         const result = await locked(async () => {
+           const state = await stateGet();
+           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return { error: "❌ 投票未開放或已截止。" };
+           if (![1, 2].includes(slot)) return { error: "票次無效。" };
+           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+           const index = candidates.findIndex(c => c.id === interaction.values[0]);
+           if (index < 0) return { error: "❌ 作品不存在或未核准。" };
+           return { candidates, index };
+         });
+         return interaction.editReply(result.error ? { content: result.error, embeds: [], components: [] } : { content: "", ...previewPanel(result.candidates[result.index], testing, result.index, result.candidates.length, slot) });
+       }
+       if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
+         const parts = interaction.customId.split(":");
+         const testing = parts[1] === "testconfirm", slot = Number(parts[2]), candidateId = parts[3];
+         await interaction.deferReply({ ephemeral: true });
+         const result = await locked(async () => {
+           const state = await stateGet();
+           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state)) return "❌ 投票未開放或已截止。";
+           if (![1, 2].includes(slot)) return "❌ 票次無效。";
+           const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
+           const candidate = candidates.find(c => c.id === candidateId && c.status === "已核准");
+           if (!candidate) return "❌ 作品已移除或未核准。";
+           if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品。";
+           const tab = testing ? TEST_VOTES_TAB : VOTES_TAB;
+           const rows = await read(tab);
+           const ballots = userBallots(rows, interaction.user.id);
+           const other = ballots.get(slot === 1 ? 2 : 1);
+           if (other?.row[1] === candidateId) return "❌ 兩票必須投給不同的作品，請選其他作品。";
+           const current = ballots.get(slot);
+           const values = [interaction.user.id, candidate.id, nowTaipei(), String(slot)];
+           if (!current) await append(tab, values);
+           else await updateRow(tab, current.index, values);
+           return `✅ ${testing ? "【測試】" : ""}第 ${slot} 票${current ? "修改" : "投票"}成功！投給 **${candidate.author}**。\n${candidate.url}`;
+         });
+         return interaction.editReply({ content: result, embeds: [], components: [] });
+       }
     } catch (err) {
       console.error("[變裝互動]", err);
       const payload = { content: "❌ 操作失敗，請稍後重試或通知管理員。", components: [] };
