@@ -118,7 +118,7 @@ async function scan(client) {
       if (msg.createdTimestamp < START_MS || msg.createdTimestamp > END_MS || msg.author.bot) continue;
       const photo = msg.attachments.find(imageAttachment);
       if (!photo || seen.has(msg.id)) continue;
-      await append(SUBMISSIONS_TAB, [msg.id, msg.author.id, msg.author.username, photo.url,
+      await append(SUBMISSIONS_TAB, [msg.id, msg.author.id, (msg.member?.displayName || msg.author.username), photo.url,
         msg.url, new Date(msg.createdTimestamp).toISOString(), "待審核"]);
       seen.add(msg.id);
       count++;
@@ -131,6 +131,32 @@ async function scan(client) {
 }
 function candidateRow(r) {
   return { id: r[0], authorId: r[1], author: r[2], image: r[3], url: r[4], date: r[5], status: r[6] };
+}
+async function withGuildNames(client, candidates) {
+  const channel = await getChannel(client);
+  const guild = channel.guild;
+  const names = new Map();
+  await Promise.all([...new Set(candidates.map(c => c.authorId))].map(async id => {
+    try {
+      const member = await guild.members.fetch(id);
+      if (member) names.set(id, member.displayName);
+    } catch (err) {
+      console.warn(`[變裝暱稱] ${id}: ${err.message}`);
+    }
+  }));
+  return candidates.map(c => ({ ...c, author: names.get(c.authorId) || c.author }));
+}
+function previewPanel(candidate, testing) {
+  const embed = new EmbedBuilder().setColor(testing ? 0x3498DB : 0x9B59B6)
+    .setTitle(testing ? "🧪 測試｜確認參賽作品" : "🎃 確認參賽作品")
+    .setDescription(`**參賽者：${candidate.author}**\n[查看原始投稿](${candidate.url})\n\n請先確認圖片，再按「確認投票」。選擇作品不會直接投票。`);
+  if (candidate.image?.startsWith("https://")) embed.setImage(candidate.image);
+  const tag = testing ? "testconfirm" : "confirm";
+  const back = testing ? "testvote" : "vote";
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`costume:${tag}:${candidate.id}`).setLabel("確認投票").setEmoji("✅").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`costume:${back}:0`).setLabel("返回選擇").setEmoji("↩️").setStyle(ButtonStyle.Secondary)
+  )] };
 }
 function reviewEmbed(c, index, total) {
   const embed = new EmbedBuilder().setColor(0xF59E0B)
@@ -190,7 +216,7 @@ async function publish(client) {
   await stateSet("open", "no");
   if (state.publishing === "yes") return false;
   await stateSet("publishing", "yes");
-  const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准");
+  const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
   const validIds = new Set(candidates.map(c => c.id));
   const votes = await read(VOTES_TAB);
   const latest = new Map();
@@ -357,7 +383,7 @@ function setupCostumeVoting(client) {
           if (testing && (await stateGet()).testOpen !== "yes") return "🧪 測試模式已結束。";
           const vote = (await read(testing ? TEST_VOTES_TAB : VOTES_TAB)).find(r => r[0] === interaction.user.id);
           if (!vote) return "你目前還沒有投票。";
-          const c = (await read(SUBMISSIONS_TAB)).map(candidateRow).find(c => c.id === vote[1]);
+          const c = (await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow))).find(c => c.id === vote[1]);
           return c ? `🗳️ 你目前投給 **${c.author}** 的作品：${c.url}` : "你的原選票對應作品已不存在，請聯絡管理員。";
         });
         return interaction.editReply(text);
@@ -365,12 +391,12 @@ function setupCostumeVoting(client) {
       if (interaction.customId.startsWith("costume:vote:") || interaction.customId.startsWith("costume:testvote:")) {
         const testing = interaction.customId.startsWith("costume:testvote:");
         await interaction.deferReply({ ephemeral: true });
-        const data = await locked(async () => ({ state: await stateGet(), candidates: (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准") }));
+        const data = await locked(async () => ({ state: await stateGet(), candidates: await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准")) }));
         if (testing ? data.state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(data.state))
           return interaction.editReply("❌ 目前尚未開放投票，或投票已截止。");
         if (!data.candidates.length) return interaction.editReply("目前沒有可投票作品。");
         const page = Number(interaction.customId.split(":")[2]) || 0;
-        return interaction.editReply({ content: testing ? "🧪 測試投票（不計入正式票數），請選擇作品。" : "🎃 請選擇你喜歡的作品（不可投給自己）；可重選改票。", components: selectPage(data.candidates, page, testing) });
+        return interaction.editReply({ content: testing ? "🧪 測試投票（不計入正式票數），選擇後會先預覽圖片。" : "🎃 選擇作品後可預覽圖片，確認後才會投票。", embeds: [], components: selectPage(data.candidates, page, testing) });
       }
       if (interaction.customId === "costume:select" || interaction.customId === "costume:testselect") {
         const testing = interaction.customId === "costume:testselect";
@@ -378,11 +404,27 @@ function setupCostumeVoting(client) {
         const result = await locked(async () => {
           const state = await stateGet();
           if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
-            return "❌ 投票已截止或尚未開放。";
-          const candidates = (await read(SUBMISSIONS_TAB)).map(candidateRow);
+            return { error: "❌ 投票已截止或尚未開放。" };
+          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
           const candidate = candidates.find(c => c.id === interaction.values[0] && c.status === "已核准");
+          if (!candidate) return { error: "❌ 作品已被移除，請重新選擇。" };
+          if (candidate.authorId === interaction.user.id) return { error: "❌ 不能投票給自己的作品，請選其他參賽者。" };
+          return { candidate };
+        });
+        return interaction.editReply(result.error ? { content: result.error } : { content: "", ...previewPanel(result.candidate, testing) });
+      }
+      if (interaction.customId.startsWith("costume:confirm:") || interaction.customId.startsWith("costume:testconfirm:")) {
+        const testing = interaction.customId.startsWith("costume:testconfirm:");
+        const candidateId = interaction.customId.split(":")[2];
+        await interaction.deferReply({ ephemeral: true });
+        const result = await locked(async () => {
+          const state = await stateGet();
+          if (testing ? state.testOpen !== "yes" || Date.now() >= VOTE_START_MS : !isOpen(state))
+            return "❌ 投票已截止或尚未開放。";
+          const candidates = await withGuildNames(client, (await read(SUBMISSIONS_TAB)).map(candidateRow));
+          const candidate = candidates.find(c => c.id === candidateId && c.status === "已核准");
           if (!candidate) return "❌ 作品已被移除，請重新選擇。";
-          if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品，請選其他參賽者。";
+          if (candidate.authorId === interaction.user.id) return "❌ 不能投票給自己的作品。";
           const tab = testing ? TEST_VOTES_TAB : VOTES_TAB;
           const rows = await read(tab);
           const index = rows.findIndex(r => r[0] === interaction.user.id);
@@ -391,7 +433,7 @@ function setupCostumeVoting(client) {
           else await updateRow(tab, index, values);
           return `✅ ${testing ? "【測試】" : ""}${index < 0 ? "投票成功" : "改票成功"}！你投給 **${candidate.author}** 的作品。\n${candidate.url}`;
         });
-        return interaction.editReply({ content: result, components: [] });
+        return interaction.editReply({ content: result, embeds: [], components: [] });
       }
     } catch (err) {
       console.error("[變裝互動]", err);
