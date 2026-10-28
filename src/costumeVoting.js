@@ -299,12 +299,46 @@ async function publish(client) {
   return true;
 }
 
+// 僅預覽測試票的排名：不修改正式選票、不設定 published，也不關閉測試模式。
+async function testResultsPreview(client) {
+  const candidates = await withGuildNames(client,
+    (await read(SUBMISSIONS_TAB)).map(candidateRow).filter(c => c.status === "已核准"));
+  const votes = await read(TEST_VOTES_TAB);
+  const { counts, voters, validVotes } = voteCount(votes, candidates);
+  const ordered = [...candidates].sort((a, b) => counts.get(b.id) - counts.get(a.id) || a.id.localeCompare(b.id));
+  let rank = 0, previousCount = null;
+  const lines = ordered.map((c, index) => {
+    const count = counts.get(c.id);
+    if (count !== previousCount) rank = index + 1;
+    previousCount = count;
+    const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : "🎭";
+    return `${medal} **第 ${rank} 名**｜<@${c.authorId}>：**${count} 票**｜[作品](${c.url})`;
+  });
+  const header = `🧪 **EtheReal 萬聖節變裝大賽｜模擬公布結果**\n⚠️ 這是測試選票，不是正式結果。\n\n`;
+  const footer = `\n\n有效投票人數：**${voters} 人**｜有效票數：**${validVotes} 票**\n正式投票截止：2026/10/31 23:59（台灣時間）`;
+  const chunks = [];
+  let current = header;
+  for (const line of lines.length ? lines : ["目前沒有已核准作品。"]) {
+    if (current.length + line.length + 1 > 1800) {
+      chunks.push(current);
+      current = "";
+    }
+    current += `${line}\n`;
+  }
+  if (current.length + footer.length > 1900) {
+    chunks.push(current);
+    current = "";
+  }
+  chunks.push(current + footer);
+  return chunks;
+}
+
 function setupCostumeVoting(client) {
   client.on("messageCreate", async message => {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
     if (!message.guild || !isAdmin(message.member)) return;
     const command = message.content.trim().slice(PREFIX.length).trim();
-    if (!["掃描", "審核", "審核全部", "重設審核", "開放", "狀態", "公布", "測試", "測試結束"].includes(command)) return;
+    if (!["掃描", "審核", "審核全部", "重設審核", "開放", "狀態", "公布", "測試", "測試結束", "測試結果"].includes(command)) return;
     try {
       if (command === "掃描") {
         await message.reply("🔎 正在掃描 10/18～10/29 的圖片投稿，請稍候……");
@@ -358,6 +392,14 @@ function setupCostumeVoting(client) {
           return `🧪 測試投票已建立（${candidates.length} 件核准作品）。測試票不計入正式結果。`;
         });
         return message.reply(result);
+      }
+      if (command === "測試結果") {
+        const chunks = await locked(() => testResultsPreview(client));
+        // 發在執行指令的測試頻道，避免提前公布到正式比賽頻道。
+        for (const content of chunks) {
+          await message.channel.send({ content, allowedMentions: { parse: [] } });
+        }
+        return;
       }
       if (command === "測試結束") {
         const result = await locked(async () => {
