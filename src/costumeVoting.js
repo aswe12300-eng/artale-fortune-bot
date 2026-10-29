@@ -37,7 +37,7 @@ function locked(task) {
 function sheetRange(tab, range) { return `'${tab}'!${range}`; }
 function nowTaipei() { return new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false }); }
 function isAdmin(member) { return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild)); }
-function isOpen(state) { return state.open === "yes" && Date.now() >= VOTE_START_MS && Date.now() < DEADLINE_MS && state.published !== "yes"; }
+function isOpen(state) { return state.open === "yes" && Date.now() < DEADLINE_MS && state.published !== "yes"; }
 function imageAttachment(att) {
   return att.contentType?.startsWith("image/") || /\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(att.url || "");
 }
@@ -239,7 +239,7 @@ const reviewSessions = new Map();
 function votePanel() {
   return {
     embeds: [new EmbedBuilder().setColor(0x9B59B6).setTitle("🎃 EtheReal 萬聖節變裝大賽｜正式投票")
-      .setDescription("每位會員 **兩票**，必須投給**不同作品**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n❗ **建議大家先在上方投稿區欣賞所有參賽作品，選好喜歡的造型後，再進行投票！**\n\n🕒 **2026/10/30 11:59 開始投票**\n⏰ **2026/10/31 23:59 截止（台灣時間）**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
+      .setDescription("每位會員 **兩票**，必須投給**不同作品**，**禁止投給自己的作品**。\n截止前可以改票，以最後一次投票為準。\n\n❗ **建議大家先在上方投稿區欣賞所有參賽作品，選好喜歡的造型後，再進行投票！**\n\n🕒 **開放後立即開始投票**\n⏰ **2026/10/31 23:59 截止（台灣時間）**\n按下方按鈕選擇作品；投票期間不公開即時票數。")],
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("costume:vote:0").setLabel("🗳️ 我要投票／改票").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("costume:mine").setLabel("查看我的選票").setStyle(ButtonStyle.Secondary)
@@ -422,7 +422,6 @@ function setupCostumeVoting(client) {
       if (command === "開放") {
         const result = await locked(async () => {
           const state = await stateGet();
-          if (Date.now() < VOTE_START_MS) return "⏳ 10/30 11:59（台灣時間）才可以正式開放投票。";
           if (Date.now() >= DEADLINE_MS) return "❌ 已超過投票截止時間。";
           if (state.open === "yes") return "⚠️ 投票已開放，請勿重複發佈。";
           if (state.published === "yes") return "❌ 結果已公布。";
